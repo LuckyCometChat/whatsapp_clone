@@ -1,130 +1,96 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import { View, Text, Alert, TextInput, Button, StyleSheet } from 'react-native'
+import React, { useEffect, useState } from 'react'
+import { CometChat } from '@cometchat/chat-sdk-react-native';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+const App = () => {
+  const [uid, setUid] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+  useEffect(() => {
+    const initCometChat = async () => {
+      try {
+        const appID: string = "272268d25643b5db";
+        const region: string = "IN";
+        
+        const appSetting: CometChat.AppSettings = new CometChat.AppSettingsBuilder()
+          .subscribePresenceForAllUsers()
+          .setRegion(region)
+          .autoEstablishSocketConnection(true)
+          .build();
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+        const initialized = await CometChat.init(appID, appSetting);
+        
+        if (initialized) {
+          console.log("CometChat initialization successful");
+        } else {
+          Alert.alert("CometChat Init", "Initialization failed");
+        }
+      } catch (error) {
+        console.error("CometChat initialization error:", error);
+        Alert.alert("CometChat Init Error", JSON.stringify(error));
+      }
+    };
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+    initCometChat();
+  }, []);
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  const loginCometChat = async () => {
+    try {
+      const authKey: string = "3a1b1fef651a2279ff270d847dd67991ded9808b";
+      const user = await CometChat.login(uid, authKey);
+      console.log("Login successful:", user);
+      Alert.alert("Login Successful", `Welcome ${user.getUid()}`);
+      setIsLoggedIn(true);
+    } catch (error) {
+      console.error("Login error:", error);
+      Alert.alert("Login Error", JSON.stringify(error));
+    }
   };
 
-  /*
-   * To keep the template simple and small we're adding padding to prevent view
-   * from rendering under the System UI.
-   * For bigger apps the reccomendation is to use `react-native-safe-area-context`:
-   * https://github.com/AppAndFlow/react-native-safe-area-context
-   *
-   * You can read more about it here:
-   * https://github.com/react-native-community/discussions-and-proposals/discussions/827
-   */
-  const safePadding = '5%';
+  const logoutCometChat = async () => {
+    try {
+      await CometChat.logout();
+      console.log("Logout successful");
+      Alert.alert("Logout Successful");
+      setIsLoggedIn(false);
+    } catch (error) {
+      console.error("Logout error:", error);
+      Alert.alert("Logout Error", JSON.stringify(error));
+    }
+  };
 
   return (
-    <View style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <View style={styles.container}>
+      <Text style={styles.title}>CometChat</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Enter UID"
+        value={uid}
+        onChangeText={setUid}
       />
-      <ScrollView
-        style={backgroundStyle}>
-        <View style={{paddingRight: safePadding}}>
-          <Header/>
-        </View>
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-            paddingHorizontal: safePadding,
-            paddingBottom: safePadding,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
+      <Button title="Login" onPress={loginCometChat} disabled={isLoggedIn} />
+      <Button title="Logout" onPress={logoutCometChat} disabled={!isLoggedIn} />
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
   },
-  sectionTitle: {
+  title: {
     fontSize: 24,
-    fontWeight: '600',
+    marginBottom: 20,
+    textAlign: 'center',
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
+  input: {
+    height: 40,
+    borderColor: 'gray',
+    borderWidth: 1,
+    marginBottom: 20,
+    paddingHorizontal: 10,
   },
 });
 
