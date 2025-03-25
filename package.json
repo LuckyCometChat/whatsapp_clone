@@ -10,6 +10,8 @@
     "test": "jest"
   },
   "dependencies": {
+    "@cometchat/chat-sdk-react-native": "^4.0.12",
+    "@react-native-async-storage/async-storage": "^2.1.2",
     "react": "19.0.0",
     "react-native": "0.78.1"
   },
