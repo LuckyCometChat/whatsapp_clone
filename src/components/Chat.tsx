@@ -12,7 +12,7 @@ import {
   StatusBar,
   Image
 } from 'react-native';
-import { fetchMessages, sendMessage } from '../services/cometChat';
+import { fetchMessages, sendMessage, subscribeToUserStatus } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage } from '../types';
 
 interface ChatProps {
@@ -24,15 +24,29 @@ interface ChatProps {
 const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [userStatus, setUserStatus] = useState<'online' | 'offline'>('offline');
   const flatListRef = useRef<FlatList>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     loadMessages();
+    // Subscribe to user status updates
+    unsubscribeRef.current = subscribeToUserStatus(selectedUser.uid, (status) => {
+      setUserStatus(status);
+    });
+
+    return () => {
+      // Cleanup subscription when component unmounts or user changes
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
   }, [selectedUser]);
 
   const loadMessages = async () => {
     try {
       const fetchedMessages = await fetchMessages(selectedUser.uid);
+
       const convertedMessages: ChatMessage[] = (fetchedMessages as unknown as CometChatMessage[]).map(msg => ({
         id: msg.id,
         text: msg.text,
@@ -42,9 +56,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
           avatar: msg.sender.avatar
         },
         sentAt: msg.sentAt,
-        type: msg.type,
-        status: 'seen' // You might want to get this from the actual message
+        type: msg.type
       }));
+      // Sort messages by timestamp in ascending order
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
     } catch (error) {
@@ -67,8 +81,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
           avatar: cometChatMessage.sender.avatar
         },
         sentAt: cometChatMessage.sentAt,
-        type: cometChatMessage.type,
-        status: 'sent' // Initially set as sent
+        type: cometChatMessage.type
       };
       setMessages(prevMessages => [...prevMessages, convertedMessage]);
       setNewMessage('');
@@ -125,7 +138,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
                 </Text>
               )}
             </View>
-            <View style={styles.onlineIndicator} />
           </View>
         )}
         <View style={[
@@ -136,12 +148,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
           <View style={styles.messageFooter}>
             <Text style={styles.messageTime}>{messageTime}</Text>
             {isSentByMe && (
-              <Text style={[
-                styles.messageStatus,
-                item.status === 'seen' && styles.messageStatusSeen
-              ]}>
-                ✓✓
-              </Text>
+              <Text style={styles.messageStatus}>✓✓</Text>
             )}
           </View>
         </View>
@@ -159,7 +166,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
                 </Text>
               )}
             </View>
-            <View style={styles.onlineIndicator} />
           </View>
         )}
       </View>
@@ -185,13 +191,26 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
                 {selectedUser.name.charAt(0).toUpperCase()}
               </Text>
             )}
-            <View style={styles.headerOnlineIndicator} />
+            <View style={[
+              styles.headerOnlineIndicator,
+              { backgroundColor: userStatus === 'online' ? '#25D366' : '#ccc' }
+            ]}>
+              <View style={[
+                styles.headerOnlineIndicatorInner,
+                { backgroundColor: userStatus === 'online' ? '#fff' : '#f0f0f0' }
+              ]} />
+            </View>
           </View>
           <View style={styles.headerTextContainer}>
             <Text style={styles.chatTitle}>
               {selectedUser.name}
             </Text>
-            <Text style={styles.chatSubtitle}>online</Text>
+            <Text style={[
+              styles.chatSubtitle,
+              { color: userStatus === 'online' ? '#25D366' : '#999' }
+            ]}>
+              {userStatus === 'online' ? 'Online' : 'Offline'}
+            </Text>
           </View>
         </View>
       </View>
@@ -296,12 +315,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#25D366',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     borderWidth: 2,
     borderColor: '#075E54',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerOnlineIndicatorInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   messagesContainer: {
     paddingVertical: 10,
@@ -341,17 +366,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#25D366',
-    borderWidth: 2,
-    borderColor: '#f0f0f0',
-  },
   messageContainer: {
     maxWidth: '70%',
     padding: 10,
@@ -389,6 +403,7 @@ const styles = StyleSheet.create({
   messageStatus: {
     fontSize: 12,
     color: '#666',
+    letterSpacing: -1,
   },
   messageStatusSeen: {
     color: '#4FC3F7',

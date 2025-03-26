@@ -9,7 +9,7 @@ import {
   SafeAreaView,
   StatusBar
 } from 'react-native';
-import { fetchUsers, logoutCometChat } from '../services/cometChat';
+import { fetchUsers, logoutCometChat, subscribeToUserStatus } from '../services/cometChat';
 import { User, CometChatUser } from '../types';
 
 interface UserListProps {
@@ -17,23 +17,45 @@ interface UserListProps {
   onLogout: () => void;
 }
 
+interface UserWithStatus extends User {
+  status: 'online' | 'offline';
+}
+
 const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserWithStatus[]>([]);
+  const unsubscribeFunctions = React.useRef<{ [key: string]: () => void }>({});
 
   useEffect(() => {
     loadUsers();
+    return () => {
+      // Cleanup subscriptions when component unmounts
+      Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
+    };
   }, []);
 
   const loadUsers = async () => {
     try {
       const fetchedUsers = await fetchUsers();
-      // Convert fetched users to our User type
-      const convertedUsers: User[] = (fetchedUsers as unknown as CometChatUser[]).map(user => ({
+      // Convert fetched users to our User type with initial offline status
+      const convertedUsers: UserWithStatus[] = (fetchedUsers as unknown as CometChatUser[]).map(user => ({
         uid: user.uid,
         name: user.name,
-        avatar: user.avatar
+        avatar: user.avatar,
+        status: 'offline'
       }));
       setUsers(convertedUsers);
+
+      // Subscribe to status updates for each user
+      convertedUsers.forEach(user => {
+        const unsubscribe = subscribeToUserStatus(user.uid, (status) => {
+          setUsers(prevUsers => 
+            prevUsers.map(u => 
+              u.uid === user.uid ? { ...u, status } : u
+            )
+          );
+        });
+        unsubscribeFunctions.current[user.uid] = unsubscribe;
+      });
     } catch (error) {
       console.error("Error loading users:", error);
     }
@@ -41,6 +63,8 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
 
   const handleLogout = async () => {
     try {
+      // Cleanup all subscriptions before logout
+      Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
       await logoutCometChat();
       onLogout();
     } catch (error) {
@@ -48,7 +72,7 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
     }
   };
 
-  const renderUser = ({ item }: { item: User }) => (
+  const renderUser = ({ item }: { item: UserWithStatus }) => (
     <TouchableOpacity 
       style={styles.userItem}
       onPress={() => onUserSelect(item)}
@@ -64,11 +88,24 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
             {item.name.charAt(0).toUpperCase()}
           </Text>
         )}
-        <View style={styles.onlineIndicator} />
+        <View style={[
+          styles.onlineIndicator,
+          { backgroundColor: item.status === 'online' ? '#25D366' : '#ccc' }
+        ]}>
+          <View style={[
+            styles.onlineIndicatorInner,
+            { backgroundColor: item.status === 'online' ? '#fff' : '#f0f0f0' }
+          ]} />
+        </View>
       </View>
       <View style={styles.userInfo}>
         <Text style={styles.userName}>{item.name}</Text>
-        <Text style={styles.userStatus}>online</Text>
+        <Text style={[
+          styles.userStatus,
+          { color: item.status === 'online' ? '#25D366' : '#999' }
+        ]}>
+          {item.status === 'online' ? 'Online' : 'Offline'}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -157,12 +194,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#25D366',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     borderWidth: 2,
     borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  onlineIndicatorInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   userInfo: {
     flex: 1,
@@ -175,7 +218,7 @@ const styles = StyleSheet.create({
   },
   userStatus: {
     fontSize: 14,
-    color: '#666',
+    fontWeight: '500',
   },
 });
 

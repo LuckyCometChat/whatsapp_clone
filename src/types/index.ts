@@ -1,4 +1,4 @@
-import { CometChat } from '@cometchat/chat-sdk-react-native';
+import { CometChat } from '@cometChat/chat-sdk-react-native';
 
 export interface User {
   uid: string;
@@ -6,13 +6,13 @@ export interface User {
   avatar?: string;
 }
 
-export interface CometChatUser {
+export interface CometChatUser extends CometChat.User {
   uid: string;
   name: string;
   avatar?: string;
 }
 
-export interface CometChatMessage {
+export interface CometChatMessage extends CometChat.TextMessage {
   id: string;
   text: string;
   sender: CometChatUser;

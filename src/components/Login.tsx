@@ -37,7 +37,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={styles.header.backgroundColor} barStyle="light-content" />
       <View style={styles.loginContainer}>
-        <Text style={styles.loginTitle}>WhatsApp Clone</Text>
+        <Text style={styles.loginTitle}>WhatsApp</Text>
         <TextInput
           style={styles.input}
           placeholder="Enter UID"
