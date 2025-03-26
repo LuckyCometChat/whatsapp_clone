@@ -43,9 +43,10 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     });
 
     const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
+      const messageId = deletedMessage.getId().toString(); 
       setMessages(prevMessages => 
         prevMessages.map(msg => 
-          msg.id === deletedMessage.getId().toString()
+          msg.id === messageId
             ? { ...msg, text: "This message was deleted" }
             : msg
         )
@@ -143,6 +144,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       setEditingMessage(selectedMessage);
       setEditText(selectedMessage.text);
       setShowMessageOptions(false);
+      console.log("Editing message:", selectedMessage);
     } catch (error) {
       console.error("Error preparing edit:", error);
       Alert.alert(
@@ -204,7 +206,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
         )
       );
       setEditingMessage(null);
-      // setEditText('');
+      setEditText('');
       Alert.alert("Success", "Message edited successfully");
     } catch (error: any) {
       console.error("Error editing message:", error);
@@ -227,6 +229,32 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       hour: '2-digit', 
       minute: '2-digit' 
     });
+  };
+
+  const formatDateHeading = (timestamp: number) => {
+    const messageDate = new Date(timestamp * 1000);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+  
+    if (
+      messageDate.getDate() === today.getDate() &&
+      messageDate.getMonth() === today.getMonth() &&
+      messageDate.getFullYear() === today.getFullYear()
+    ) {
+      return "Today";
+    } else if (
+      messageDate.getDate() === yesterday.getDate() &&
+      messageDate.getMonth() === yesterday.getMonth() &&
+      messageDate.getFullYear() === yesterday.getFullYear()
+    ) {
+      return "Yesterday";
+    } else {
+      return messageDate.toLocaleDateString(undefined, {
+        day: "2-digit",
+        month: "short",
+      });
+    }
   };
 
   const renderMessageOptions = () => (
@@ -265,100 +293,113 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     </Modal>
   );
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => {
+  const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
     const isSentByMe = item.sender.uid === currentUser.uid;
     const messageTime = formatMessageTime(item.sentAt);
     const isEditing = editingMessage?.id === item.id;
     const isDeleted = item.text === "This message was deleted";
     const isEdited = item.editedAt !== undefined;
-
+  
+    const showDateHeading =
+      index === 0 ||
+      formatDateHeading(item.sentAt) !== formatDateHeading(messages[index - 1].sentAt);
+  
     return (
-      <TouchableOpacity
-        onLongPress={(event) => handleLongPress(item, event)}
-        style={[
-          styles.messageWrapper,
-          isSentByMe ? styles.sentMessageWrapper : styles.receivedMessageWrapper
-        ]}
-      >
-        {!isSentByMe && (
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              {selectedUser.avatar ? (
-                <Image 
-                  source={{ uri: selectedUser.avatar }} 
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <Text style={styles.avatarText}>
-                  {selectedUser.name.charAt(0).toUpperCase()}
-                </Text>
-              )}
-            </View>
-            <View style={styles.onlineIndicator} />
+      <>
+        {showDateHeading && (
+          <View style={styles.dateHeadingContainer}>
+            <Text style={styles.dateHeadingText}>
+              {formatDateHeading(item.sentAt)}
+            </Text>
           </View>
         )}
-        <View style={[
-          styles.messageContainer,
-          isSentByMe ? styles.sentMessage : styles.receivedMessage,
-          isEditing && styles.editingMessage,
-          isDeleted && styles.deletedMessage
-        ]}>
-          {isEditing ? (
-            <View style={styles.editContainer}>
-              <TextInput
-                style={styles.editInput}
-                value={editText}
-                onChangeText={setEditText}
-                multiline
-                autoFocus
-              />
-              <View style={styles.editActions}>
-                <TouchableOpacity onPress={cancelEdit} style={styles.editButton}>
-                  <Text style={styles.editButtonText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleEditSubmit} style={[styles.editButton, styles.saveButton]}>
-                  <Text style={styles.editButtonText}>Save</Text>
-                </TouchableOpacity>
+        <TouchableOpacity
+          onLongPress={(event) => handleLongPress(item, event)}
+          style={[
+            styles.messageWrapper,
+            isSentByMe ? styles.sentMessageWrapper : styles.receivedMessageWrapper,
+          ]}
+        >
+          {!isSentByMe && (
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatar}>
+                {selectedUser.avatar ? (
+                  <Image 
+                    source={{ uri: selectedUser.avatar }} 
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {selectedUser.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
               </View>
+              <View style={styles.onlineIndicator} />
             </View>
-          ) : (
-            <>
-              <Text style={[
-                styles.messageText,
-                isDeleted && styles.deletedMessageText
-              ]}>{item.text}</Text>
-              {!isDeleted && (
-                <View style={styles.messageFooter}>
-                  <Text style={styles.messageTime}>{messageTime}</Text>
-                  {isSentByMe && (
-                    <Text style={styles.messageStatus}>✓✓</Text>
-                  )}
-                  {isEdited && (
-                    <Text style={styles.editedText}>edited</Text>
-                  )}
-                </View>
-              )}
-            </>
           )}
-        </View>
-        {isSentByMe && (
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              {currentUser.avatar ? (
-                <Image 
-                  source={{ uri: currentUser.avatar }} 
-                  style={styles.avatarImage}
+          <View style={[
+            styles.messageContainer,
+            isSentByMe ? styles.sentMessage : styles.receivedMessage,
+            isEditing && styles.editingMessage,
+            isDeleted && styles.deletedMessage
+          ]}>
+            {isEditing ? (
+              <View style={styles.editContainer}>
+                <TextInput
+                  style={styles.editInput}
+                  value={editText}
+                  onChangeText={setEditText}
+                  multiline
+                  autoFocus
                 />
-              ) : (
-                <Text style={styles.avatarText}>
-                  {currentUser.name.charAt(0).toUpperCase()}
-                </Text>
-              )}
-            </View>
-            <View style={styles.onlineIndicator} />
+                <View style={styles.editActions}>
+                  <TouchableOpacity onPress={cancelEdit} style={styles.editButton}>
+                    <Text style={styles.editButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleEditSubmit} style={[styles.editButton, styles.saveButton]}>
+                    <Text style={styles.editButtonText}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={[
+                  styles.messageText,
+                  isDeleted && styles.deletedMessageText
+                ]}>{item.text}</Text>
+                {!isDeleted && (
+                  <View style={styles.messageFooter}>
+                    <Text style={styles.messageTime}>{messageTime}</Text>
+                    {isSentByMe && (
+                      <Text style={styles.messageStatus}>✓✓</Text>
+                    )}
+                    {isEdited && (
+                      <Text style={styles.editedText}>edited</Text>
+                    )}
+                  </View>
+                )}
+              </>
+            )}
           </View>
-        )}
-      </TouchableOpacity>
+          {isSentByMe && (
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatar}>
+                {currentUser.avatar ? (
+                  <Image 
+                    source={{ uri: currentUser.avatar }} 
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>
+                    {currentUser.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.onlineIndicator} />
+            </View>
+          )}
+        </TouchableOpacity>
+      </>
     );
   };
 
@@ -711,7 +752,16 @@ const styles = StyleSheet.create({
     color: '#666',
     fontStyle: 'italic',
     marginLeft: 4,
-  }
+  },
+  dateHeadingContainer: {
+    alignItems: "center",
+    marginVertical: 10,
+  },
+  dateHeadingText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "bold",
+  },
 });
 
-export default Chat; 
+export default Chat;
