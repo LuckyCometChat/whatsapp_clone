@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage } from '../types';
+import { CometChat } from '@cometchat/chat-sdk-react-native';
 
 interface ChatProps {
   currentUser: User;
@@ -41,7 +42,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       setUserStatus(status);
     });
 
-    // Add message deletion listener
     const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
       setMessages(prevMessages => 
         prevMessages.map(msg => 
@@ -52,7 +52,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       );
     });
 
-    // Add message edit listener
+   
     const unsubscribeEdit = subscribeToMessageEdit((editedMessage) => {
       setMessages(prevMessages => 
         prevMessages.map(msg => 
@@ -204,7 +204,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
         )
       );
       setEditingMessage(null);
-      setEditText('');
+      // setEditText('');
       Alert.alert("Success", "Message edited successfully");
     } catch (error: any) {
       console.error("Error editing message:", error);
