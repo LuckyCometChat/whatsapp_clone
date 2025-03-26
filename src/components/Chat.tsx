@@ -10,9 +10,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   StatusBar,
-  Image
+  Image,
+  Alert,
+  Modal
 } from 'react-native';
-import { fetchMessages, sendMessage, subscribeToUserStatus } from '../services/cometChat';
+import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage } from '../types';
 
 interface ChatProps {
@@ -25,6 +27,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [userStatus, setUserStatus] = useState<'online' | 'offline'>('offline');
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [editText, setEditText] = useState('');
+  const [showMessageOptions, setShowMessageOptions] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<ChatMessage | null>(null);
+  const [messageOptionsPosition, setMessageOptionsPosition] = useState({ x: 0, y: 0 });
   const flatListRef = useRef<FlatList>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -34,10 +41,39 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       setUserStatus(status);
     });
 
+    // Add message deletion listener
+    const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
+      setMessages(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === deletedMessage.getId().toString()
+            ? { ...msg, text: "This message was deleted" }
+            : msg
+        )
+      );
+    });
+
+    // Add message edit listener
+    const unsubscribeEdit = subscribeToMessageEdit((editedMessage) => {
+      setMessages(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === editedMessage.getId().toString()
+            ? {
+                ...msg,
+                text: (editedMessage as CometChat.TextMessage).getText(),
+                editedAt: editedMessage.getEditedAt(),
+                editedBy: editedMessage.getEditedBy()
+              }
+            : msg
+        )
+      );
+    });
+
     return () => {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
       }
+      unsubscribeDeletion();
+      unsubscribeEdit();
     };
   }, [selectedUser]);
 
@@ -66,8 +102,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     }
   };
 
- 
-
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
 
@@ -94,6 +128,99 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     }
   };
 
+  const handleLongPress = (message: ChatMessage, event: any) => {
+    if (message.sender.uid === currentUser.uid) {
+      const { pageX, pageY } = event.nativeEvent;
+      setMessageOptionsPosition({ x: pageX, y: pageY });
+      setSelectedMessage(message);
+      setShowMessageOptions(true);
+    }
+  };
+
+  const handleEditMessage = async () => {
+    if (!selectedMessage) return;
+    try {
+      setEditingMessage(selectedMessage);
+      setEditText(selectedMessage.text);
+      setShowMessageOptions(false);
+    } catch (error) {
+      console.error("Error preparing edit:", error);
+      Alert.alert(
+        "Error",
+        "Failed to prepare message for editing. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
+  };
+
+  const handleDeleteMessage = async () => {
+    if (!selectedMessage) return;
+    
+    Alert.alert(
+      "Delete Message",
+      "Are you sure you want to delete this message?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteMessage(selectedMessage.id);
+              setMessages(prevMessages => 
+                prevMessages.map(msg => 
+                  msg.id === selectedMessage.id 
+                    ? { ...msg, text: "This message was deleted" }
+                    : msg
+                )
+              );
+              setShowMessageOptions(false);
+              Alert.alert("Success", "Message deleted successfully");
+            } catch (error: any) {
+              console.error("Error deleting message:", error);
+              Alert.alert(
+                "Error",
+                error.message || "Failed to delete message. Please try again.",
+                [{ text: "OK" }]
+              );
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleEditSubmit = async () => {
+    if (!editingMessage || !editText.trim()) return;
+
+    try {
+      const editedMessage = await EditMessage(editingMessage.id, editText);
+      setMessages(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === editingMessage.id ? editedMessage : msg
+        )
+      );
+      setEditingMessage(null);
+      setEditText('');
+      Alert.alert("Success", "Message edited successfully");
+    } catch (error: any) {
+      console.error("Error editing message:", error);
+      Alert.alert(
+        "Error",
+        error.message || "Failed to edit message. Please try again.",
+        [{ text: "OK" }]
+      );
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingMessage(null);
+    setEditText('');
+  };
+
   const formatMessageTime = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
     return date.toLocaleTimeString([], { 
@@ -102,15 +229,57 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     });
   };
 
+  const renderMessageOptions = () => (
+    <Modal
+      visible={showMessageOptions}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowMessageOptions(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowMessageOptions(false)}
+      >
+        <View style={[
+          styles.messageOptions,
+          {
+            top: messageOptionsPosition.y - 100,
+            left: messageOptionsPosition.x - 100,
+          }
+        ]}>
+          <TouchableOpacity 
+            style={styles.optionButton}
+            onPress={handleEditMessage}
+          >
+            <Text style={styles.optionText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.optionButton}
+            onPress={handleDeleteMessage}
+          >
+            <Text style={[styles.optionText, styles.deleteOption]}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isSentByMe = item.sender.uid === currentUser.uid;
     const messageTime = formatMessageTime(item.sentAt);
+    const isEditing = editingMessage?.id === item.id;
+    const isDeleted = item.text === "This message was deleted";
+    const isEdited = item.editedAt !== undefined;
 
     return (
-      <View style={[
-        styles.messageWrapper,
-        isSentByMe ? styles.sentMessageWrapper : styles.receivedMessageWrapper
-      ]}>
+      <TouchableOpacity
+        onLongPress={(event) => handleLongPress(item, event)}
+        style={[
+          styles.messageWrapper,
+          isSentByMe ? styles.sentMessageWrapper : styles.receivedMessageWrapper
+        ]}
+      >
         {!isSentByMe && (
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
@@ -130,15 +299,47 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
         )}
         <View style={[
           styles.messageContainer,
-          isSentByMe ? styles.sentMessage : styles.receivedMessage
+          isSentByMe ? styles.sentMessage : styles.receivedMessage,
+          isEditing && styles.editingMessage,
+          isDeleted && styles.deletedMessage
         ]}>
-          <Text style={styles.messageText}>{item.text}</Text>
-          <View style={styles.messageFooter}>
-            <Text style={styles.messageTime}>{messageTime}</Text>
-            {isSentByMe && (
-              <Text style={styles.messageStatus}>✓✓</Text>
-            )}
-          </View>
+          {isEditing ? (
+            <View style={styles.editContainer}>
+              <TextInput
+                style={styles.editInput}
+                value={editText}
+                onChangeText={setEditText}
+                multiline
+                autoFocus
+              />
+              <View style={styles.editActions}>
+                <TouchableOpacity onPress={cancelEdit} style={styles.editButton}>
+                  <Text style={styles.editButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleEditSubmit} style={[styles.editButton, styles.saveButton]}>
+                  <Text style={styles.editButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text style={[
+                styles.messageText,
+                isDeleted && styles.deletedMessageText
+              ]}>{item.text}</Text>
+              {!isDeleted && (
+                <View style={styles.messageFooter}>
+                  <Text style={styles.messageTime}>{messageTime}</Text>
+                  {isSentByMe && (
+                    <Text style={styles.messageStatus}>✓✓</Text>
+                  )}
+                  {isEdited && (
+                    <Text style={styles.editedText}>edited</Text>
+                  )}
+                </View>
+              )}
+            </>
+          )}
         </View>
         {isSentByMe && (
           <View style={styles.avatarContainer}>
@@ -157,7 +358,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
             <View style={styles.onlineIndicator} />
           </View>
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -212,6 +413,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         inverted={false}
       />
+      {renderMessageOptions()}
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
@@ -374,6 +576,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: 0,
   },
+  editingMessage: {
+    backgroundColor: '#E8F5E9',
+  },
   messageText: {
     color: 'black',
     fontSize: 16,
@@ -437,6 +642,75 @@ const styles = StyleSheet.create({
     backgroundColor: '#25D366',
     borderWidth: 2,
     borderColor: '#f0f0f0',
+  },
+  editContainer: {
+    width: '100%',
+  },
+  editInput: {
+    color: 'black',
+    fontSize: 16,
+    padding: 0,
+    marginBottom: 8,
+  },
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  editButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    backgroundColor: '#E0E0E0',
+  },
+  saveButton: {
+    backgroundColor: '#25D366',
+  },
+  editButtonText: {
+    color: '#075E54',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  messageOptions: {
+    position: 'absolute',
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 8,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 1000,
+  },
+  optionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#075E54',
+  },
+  deleteOption: {
+    color: '#FF3B30',
+  },
+  deletedMessage: {
+    backgroundColor: '#f0f0f0',
+    opacity: 0.7,
+  },
+  deletedMessageText: {
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  editedText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    marginLeft: 4,
   }
 });
 

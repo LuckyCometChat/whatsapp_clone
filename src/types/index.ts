@@ -23,8 +23,14 @@ export interface CometChatMessage extends CometChat.TextMessage {
 export interface ChatMessage {
   id: string;
   text: string;
-  sender: User;
+  sender: {
+    uid: string;
+    name: string;
+    avatar?: string;
+  };
   sentAt: number;
   type: string;
   status: 'sent' | 'delivered' | 'seen';
+  editedAt?: number;
+  editedBy?: string;
 } 

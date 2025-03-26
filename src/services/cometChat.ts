@@ -130,26 +130,49 @@ export const EditMessage = async (messageId: string, message: string): Promise<C
       CometChat.RECEIVER_TYPE.USER
     );
     
-    const sentMessage = await CometChat.editMessage(textMessage);
+    textMessage.setId(parseInt(messageId));
+    
+    const editedMessage = await CometChat.editMessage(textMessage);
    
     return {
-      id: sentMessage.getId().toString(),
-      text: (sentMessage as CometChat.TextMessage).getText(),
+      id: editedMessage.getId().toString(),
+      text: (editedMessage as CometChat.TextMessage).getText(),
       sender: {
-        uid: sentMessage.getSender().getUid(),
-        name: sentMessage.getSender().getName(),
-        avatar: sentMessage.getSender().getAvatar()
+        uid: editedMessage.getSender().getUid(),
+        name: editedMessage.getSender().getName(),
+        avatar: editedMessage.getSender().getAvatar()
       },
-      sentAt: sentMessage.getSentAt(),
-      type: sentMessage.getType(),
+      sentAt: editedMessage.getSentAt(),
+      type: editedMessage.getType(),
       status: 'sent'
     };
   }
   catch (error) {
-    console.error("Error sending message:", error);
+    console.error("Error editing message:", error);
     throw error;
   }
-}
+};
+
+export const subscribeToMessageEdit = (callback: (message: CometChat.BaseMessage) => void) => {
+  const listenerID = 'message_edit_listener';
+  
+  CometChat.addMessageListener(
+    listenerID,
+    new CometChat.MessageListener({
+      onMessageEdited: (message: CometChat.BaseMessage) => {
+        console.log("Message edited:", message);
+        callback(message);
+      },
+      onError: (error: CometChat.CometChatException) => {
+        console.error("Message edit listener error:", error);
+      }
+    })
+  );
+
+  return () => {
+    CometChat.removeMessageListener(listenerID);
+  };
+};
 
 export const subscribeToUserStatus = (uid: string, callback: (status: 'online' | 'offline') => void) => {
   const listenerID = `user_status_${uid}`;
@@ -185,4 +208,34 @@ const getStatusIcon = (status: 'sent' | 'delivered' | 'seen') => {
     default:
       return '✓';
   }
+};
+
+export const deleteMessage = async (messageId: string): Promise<void> => {
+  try {
+    await CometChat.deleteMessage(messageId);
+  } catch (error) {
+    console.error("Error deleting message:", error);
+    throw error;
+  }
+};
+
+export const subscribeToMessageDeletion = (callback: (message: CometChat.BaseMessage) => void) => {
+  const listenerID = 'message_deletion_listener';
+  
+  CometChat.addMessageListener(
+    listenerID,
+    new CometChat.MessageListener({
+      onMessageDeleted: (message: CometChat.BaseMessage) => {
+        console.log("Message deleted:", message);
+        callback(message);
+      },
+      onError: (error: CometChat.CometChatException) => {
+        console.error("Message deletion listener error:", error);
+      }
+    })
+  );
+
+  return () => {
+    CometChat.removeMessageListener(listenerID);
+  };
 }; 
