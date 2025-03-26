@@ -1,6 +1,7 @@
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 import { User, ChatMessage } from '../types';
 
+
 const APP_ID = "272268d25643b5db";
 const REGION = "IN";
 const AUTH_KEY = "3a1b1fef651a2279ff270d847dd67991ded9808b";
@@ -88,7 +89,6 @@ export const subscribeToMessageStatus = (messageId: string, callback: (status: '
     })
   );
 
-  // Return unsubscribe function
   return () => {
     CometChat.removeMessageListener(listenerID);
   };
@@ -103,8 +103,7 @@ export const sendMessage = async (receiverUid: string, message: string): Promise
     );
     
     const sentMessage = await CometChat.sendMessage(textMessage);
-    
-    // Convert to our ChatMessage type with initial 'sent' status
+   
     return {
       id: sentMessage.getId().toString(),
       text: (sentMessage as CometChat.TextMessage).getText(),
@@ -122,6 +121,35 @@ export const sendMessage = async (receiverUid: string, message: string): Promise
     throw error;
   }
 };
+
+export const EditMessage = async (messageId: string, message: string): Promise<ChatMessage> => {
+  try {
+    const textMessage = new CometChat.TextMessage(
+      messageId,
+      message,
+      CometChat.RECEIVER_TYPE.USER
+    );
+    
+    const sentMessage = await CometChat.editMessage(textMessage);
+   
+    return {
+      id: sentMessage.getId().toString(),
+      text: (sentMessage as CometChat.TextMessage).getText(),
+      sender: {
+        uid: sentMessage.getSender().getUid(),
+        name: sentMessage.getSender().getName(),
+        avatar: sentMessage.getSender().getAvatar()
+      },
+      sentAt: sentMessage.getSentAt(),
+      type: sentMessage.getType(),
+      status: 'sent'
+    };
+  }
+  catch (error) {
+    console.error("Error sending message:", error);
+    throw error;
+  }
+}
 
 export const subscribeToUserStatus = (uid: string, callback: (status: 'online' | 'offline') => void) => {
   const listenerID = `user_status_${uid}`;
@@ -141,8 +169,6 @@ export const subscribeToUserStatus = (uid: string, callback: (status: 'online' |
       }
     })
   );
-
-  // Return unsubscribe function
   return () => {
     CometChat.removeUserListener(listenerID);
   };
@@ -151,11 +177,11 @@ export const subscribeToUserStatus = (uid: string, callback: (status: 'online' |
 const getStatusIcon = (status: 'sent' | 'delivered' | 'seen') => {
   switch (status) {
     case 'sent':
-      return '✓'; // Single tick
+      return '✓'; 
     case 'delivered':
-      return '✓✓'; // Double tick
+      return '✓✓'; 
     case 'seen':
-      return '✓✓'; // Blue double tick
+      return '✓✓'; 
     default:
       return '✓';
   }

@@ -28,7 +28,6 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
   useEffect(() => {
     loadUsers();
     return () => {
-      // Cleanup subscriptions when component unmounts
       Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
     };
   }, []);
@@ -36,7 +35,7 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
   const loadUsers = async () => {
     try {
       const fetchedUsers = await fetchUsers();
-      // Convert fetched users to our User type with initial offline status
+      
       const convertedUsers: UserWithStatus[] = (fetchedUsers as unknown as CometChatUser[]).map(user => ({
         uid: user.uid,
         name: user.name,
@@ -45,7 +44,7 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
       }));
       setUsers(convertedUsers);
 
-      // Subscribe to status updates for each user
+    
       convertedUsers.forEach(user => {
         const unsubscribe = subscribeToUserStatus(user.uid, (status) => {
           setUsers(prevUsers => 
@@ -63,7 +62,6 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
 
   const handleLogout = async () => {
     try {
-      // Cleanup all subscriptions before logout
       Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
       await logoutCometChat();
       onLogout();
@@ -192,8 +190,8 @@ const styles = StyleSheet.create({
   },
   onlineIndicator: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: 2,
+    right: 2,
     width: 14,
     height: 14,
     borderRadius: 7,

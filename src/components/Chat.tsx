@@ -30,13 +30,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
 
   useEffect(() => {
     loadMessages();
-    // Subscribe to user status updates
     unsubscribeRef.current = subscribeToUserStatus(selectedUser.uid, (status) => {
       setUserStatus(status);
     });
 
     return () => {
-      // Cleanup subscription when component unmounts or user changes
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
       }
@@ -56,8 +54,10 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
           avatar: msg.sender.avatar
         },
         sentAt: msg.sentAt,
-        type: msg.type
+        type: msg.type,
+        status: 'sent'
       }));
+
       // Sort messages by timestamp in ascending order
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
@@ -65,6 +65,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       console.error("Error loading messages:", error);
     }
   };
+
+ 
 
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
@@ -81,7 +83,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
           avatar: cometChatMessage.sender.avatar
         },
         sentAt: cometChatMessage.sentAt,
-        type: cometChatMessage.type
+        type: cometChatMessage.type,
+        status: 'sent'
       };
       setMessages(prevMessages => [...prevMessages, convertedMessage]);
       setNewMessage('');
@@ -93,26 +96,10 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
 
   const formatMessageTime = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString([], { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      });
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return date.toLocaleDateString([], { weekday: 'long' });
-    } else {
-      return date.toLocaleDateString([], { 
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric'
-      });
-    }
+    return date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
   };
 
   const renderMessage = ({ item }: { item: ChatMessage }) => {
@@ -138,6 +125,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
                 </Text>
               )}
             </View>
+            <View style={styles.onlineIndicator} />
           </View>
         )}
         <View style={[
@@ -166,6 +154,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
                 </Text>
               )}
             </View>
+            <View style={styles.onlineIndicator} />
           </View>
         )}
       </View>
@@ -313,8 +302,8 @@ const styles = StyleSheet.create({
   },
   headerOnlineIndicator: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: 2,
+    right: 2,
     width: 14,
     height: 14,
     borderRadius: 7,
@@ -405,9 +394,6 @@ const styles = StyleSheet.create({
     color: '#666',
     letterSpacing: -1,
   },
-  messageStatusSeen: {
-    color: '#4FC3F7',
-  },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -441,6 +427,17 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
   },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#25D366',
+    borderWidth: 2,
+    borderColor: '#f0f0f0',
+  }
 });
 
 export default Chat; 

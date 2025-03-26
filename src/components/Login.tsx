@@ -27,7 +27,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       const user = await loginCometChat(uid);
-      onLogin(user);
+      onLogin(user );
     } catch (error) {
       Alert.alert("Login Error", "Invalid credentials or login failed");
     }
@@ -37,7 +37,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={styles.header.backgroundColor} barStyle="light-content" />
       <View style={styles.loginContainer}>
-        <Text style={styles.loginTitle}>WhatsApp</Text>
+        <Text style={styles.loginTitle}>WhatsApp
+        </Text>
         <TextInput
           style={styles.input}
           placeholder="Enter UID"
