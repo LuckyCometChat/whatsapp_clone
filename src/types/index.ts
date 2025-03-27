@@ -4,6 +4,7 @@ export interface User {
   uid: string;
   name: string;
   avatar?: string;
+  getStatus?: () => 'online' | 'offline';
 }
 
 export interface CometChatUser extends CometChat.User {

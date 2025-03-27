@@ -7,23 +7,21 @@ import {
   SafeAreaView,
   StatusBar
 } from 'react-native';
-import { fetchUsers, logoutCometChat, subscribeToUserStatus } from '../../services/cometChat';
+import { fetchUsers, logoutCometChat } from '../../services/cometChat';
 import { CometChatUser } from '../../types';
 import { UserListProps, UserWithStatus } from '../../types/userList.types';
 import { UserItem } from './UserItem';
 import { styles } from './styles';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 
-const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
+const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout, userStatuses }) => {
   const [users, setUsers] = useState<UserWithStatus[]>([]);
-  const unsubscribeFunctions = React.useRef<{ [key: string]: () => void }>({});
   const typingTimeouts = React.useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   useEffect(() => {
     loadUsers();
     setupTypingListener();
     return () => {
-      Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
       Object.values(typingTimeouts.current).forEach(timeout => clearTimeout(timeout));
     };
   }, []);
@@ -75,25 +73,18 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
     try {
       const fetchedUsers = await fetchUsers();
       
-      const convertedUsers: UserWithStatus[] = (fetchedUsers as unknown as CometChatUser[]).map(user => ({
-        uid: user.uid,
-        name: user.name,
-        avatar: user.avatar,
-        status: 'offline',
-        isTyping: false
-      }));
-      setUsers(convertedUsers);
-
-      convertedUsers.forEach(user => {
-        const unsubscribe = subscribeToUserStatus(user.uid, (status) => {
-          setUsers(prevUsers => 
-            prevUsers.map(u => 
-              u.uid === user.uid ? { ...u, status } : u
-            )
-          );
-        });
-        unsubscribeFunctions.current[user.uid] = unsubscribe;
+      const convertedUsers: UserWithStatus[] = (fetchedUsers as unknown as CometChatUser[]).map(cometChatUser => {
+        const status = cometChatUser.getStatus() as 'online' | 'offline';
+        return {
+          uid: cometChatUser.getUid(),
+          name: cometChatUser.getName(),
+          avatar: cometChatUser.getAvatar(),
+          status: status,
+          isTyping: false,
+          getStatus: () => status
+        };
       });
+      setUsers(convertedUsers);
     } catch (error) {
       console.error("Error loading users:", error);
     }
@@ -101,7 +92,6 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
 
   const handleLogout = async () => {
     try {
-      Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
       Object.values(typingTimeouts.current).forEach(timeout => clearTimeout(timeout));
       await logoutCometChat();
       onLogout();
@@ -122,7 +112,12 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
       <FlatList
         data={users}
         keyExtractor={(item) => item.uid}
-        renderItem={({ item }) => <UserItem user={item} onPress={onUserSelect} />}
+        renderItem={({ item }) => (
+          <UserItem 
+            user={item} 
+            onPress={onUserSelect} 
+          />
+        )}
         contentContainerStyle={styles.listContainer}
       />
     </SafeAreaView>

@@ -7,7 +7,8 @@ import {
   StyleSheet,
   Image,
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  Platform
 } from 'react-native';
 import { fetchUsers, logoutCometChat, subscribeToUserStatus } from '../services/cometChat';
 import { User, CometChatUser } from '../types';
@@ -131,6 +132,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+    marginTop: Platform.OS === 'android' ? StatusBar.currentHeight : 10,
   },
   header: {
     backgroundColor: '#075E54',

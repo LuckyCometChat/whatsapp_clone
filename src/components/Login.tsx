@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { loginCometChat } from '../services/cometChat';
 import { User } from '../types';
-import { get } from 'react-native/Libraries/TurboModule/TurboModuleRegistry';
+
 
 interface LoginProps {
   onLogin: (user: User) => void;

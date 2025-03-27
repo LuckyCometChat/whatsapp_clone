@@ -22,12 +22,12 @@ interface ChatProps {
   currentUser: User;
   selectedUser: User;
   onBack: () => void;
+  userStatuses: { [key: string]: 'online' | 'offline' };
 }
 
-const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
+const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStatuses }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [userStatus, setUserStatus] = useState<'online' | 'offline'>('offline');
   const [isTyping, setIsTyping] = useState(false);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [editText, setEditText] = useState('');
@@ -37,13 +37,15 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
   const flatListRef = useRef<FlatList>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
+  const userStatus = userStatuses[selectedUser.uid] || 'offline';
+
   useEffect(() => {
     loadMessages();
     unsubscribeRef.current = subscribeToUserStatus(selectedUser.uid, (status) => {
-      setUserStatus(status);
+     
     });
 
-    // Add typing indicator listener
+   
     const typingListenerId = 'chat_typing_listener';
     CometChat.addMessageListener(
       typingListenerId,
@@ -62,6 +64,29 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
         }
       })
     );
+
+    // Add user status listener
+    const userStatusListenerId = 'user_status_listener';
+    CometChat.addUserListener(
+      userStatusListenerId,
+      new CometChat.UserListener({
+        onUserOnline: (onlineUser: CometChat.User) => {
+          if (onlineUser.getUid() === selectedUser.uid) {
+            // Status updates are now handled by the parent component
+          }
+        },
+        onUserOffline: (offlineUser: CometChat.User) => {
+          if (offlineUser.getUid() === selectedUser.uid) {
+            // Status updates are now handled by the parent component
+          }
+        }
+      })
+    );
+
+    // Set initial status
+    if (selectedUser.getStatus) {
+     
+    }
 
     const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
       const messageId = deletedMessage.getId().toString(); 
@@ -97,6 +122,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       unsubscribeDeletion();
       unsubscribeEdit();
       CometChat.removeMessageListener(typingListenerId);
+      CometChat.removeUserListener(userStatusListenerId);
     };
   }, [selectedUser]);
 
@@ -129,7 +155,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     if (!newMessage.trim()) return;
 
     try {
-      // Clear typing indicator before sending message
+   
       await typeMessageEnded(selectedUser.uid);
       
       const sentMessage = await sendMessage(selectedUser.uid, newMessage);
@@ -441,7 +467,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       } catch (error) {
         console.error("Error starting typing indicator:", error);
       }
-    }, 100); // Reduced debounce time to 100ms for more real-time feel
+    }, 100); 
   };
 
   const handleTypingEnd = async () => {
@@ -543,6 +569,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f0f0',
+    marginTop: Platform.OS === 'android' ? StatusBar.currentHeight : 10,
+    
   },
   header: {
     backgroundColor: '#075E54',
@@ -706,6 +734,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     borderTopWidth: 1,
     borderTopColor: '#ddd',
+    marginRight: Platform.OS === "android" ? 10 : 0,
+    marginLeft: Platform.OS === "android" ? 10 : 0,
+    marginBottom: Platform.OS === "android" ? 20 : 0,
   },
   chatInput: {
     flex: 1,
