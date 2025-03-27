@@ -133,6 +133,7 @@ export const EditMessage = async (messageId: string, message: string): Promise<C
     textMessage.setId(parseInt(messageId));
     
     const editedMessage = await CometChat.editMessage(textMessage);
+
    
     return {
       id: editedMessage.getId().toString(),
@@ -171,6 +172,7 @@ export const subscribeToMessageEdit = (callback: (message: CometChat.BaseMessage
 
   return () => {
     CometChat.removeMessageListener(listenerID);
+    console.log("Message edit listener removed",listenerID);
   };
 };
 
