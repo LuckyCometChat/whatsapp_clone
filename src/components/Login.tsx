@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { loginCometChat } from '../services/cometChat';
 import { User } from '../types';
+import { get } from 'react-native/Libraries/TurboModule/TurboModuleRegistry';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -27,6 +28,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       const user = await loginCometChat(uid);
+      console.log(user.getStatus());
+      
       onLogin(user );
     } catch (error) {
       Alert.alert("Login Error", "Invalid credentials or login failed");
