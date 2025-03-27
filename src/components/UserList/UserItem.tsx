@@ -38,9 +38,9 @@ export const UserItem: React.FC<UserItemProps> = ({ user, onPress }) => (
       <Text style={styles.userName}>{user.name}</Text>
       <Text style={[
         styles.userStatus,
-        { color: user.status === 'online' ? '#25D366' : '#999' }
+        { color: user.isTyping ? '#25D366' : user.status === 'online' ? '#25D366' : '#999' }
       ]}>
-        {user.status === 'online' ? 'Online' : 'Offline'}
+        {user.isTyping ? 'typing...' : user.status === 'online' ? 'Online' : 'Offline'}
       </Text>
     </View>
   </TouchableOpacity>

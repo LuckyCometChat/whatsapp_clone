@@ -176,6 +176,33 @@ export const subscribeToMessageEdit = (callback: (message: CometChat.BaseMessage
   };
 };
 
+export const typeMessageStarted = async (receiverUid: string) => {
+  try {
+    const typingIndicator = new CometChat.TypingIndicator(
+      receiverUid,
+      CometChat.RECEIVER_TYPE.USER
+    );
+    CometChat.startTyping(typingIndicator);
+  } catch (error) {
+    console.error("Error starting typing indicator:", error);
+    throw error;
+  }
+};
+
+export const typeMessageEnded = async (receiverUid: string) => {
+  try {
+    const typingIndicator = new CometChat.TypingIndicator(
+      receiverUid,
+      CometChat.RECEIVER_TYPE.USER
+    );
+    CometChat.endTyping(typingIndicator);
+  } catch (error) {
+    console.error("Error ending typing indicator:", error);
+    throw error;
+  }
+};
+
+
 export const subscribeToUserStatus = (uid: string, callback: (status: 'online' | 'offline') => void) => {
   const listenerID = `user_status_${uid}`;
   

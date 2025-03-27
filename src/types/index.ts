@@ -12,7 +12,7 @@ export interface CometChatUser extends CometChat.User {
   avatar?: string;
 }
 
-export interface CometChatMessage extends CometChat.TextMessage {
+export interface CometChatMessage {
   id: string;
   text: string;
   sender: CometChatUser;

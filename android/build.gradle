@@ -16,22 +16,13 @@ buildscript {
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
         
-        //  CometChat repository 
-        maven {
-            url "https://dl.cloudsmith.io/public/cometchat/cometchat-pro-android/maven/"
-        }
     }
-}
+}               
 
-allprojects {
-    repositories {
-        maven {
-            // CometChat repository
-            url "https://dl.cloudsmith.io/public/cometchat/cometchat-pro-android/maven/"
-        }
-        google()
-        mavenCentral()
-    }
+repositories {
+  maven {
+			url "https://dl.cloudsmith.io/public/cometchat/cometchat-pro-android/maven/"
+		}
 }
 
 apply plugin: "com.facebook.react.rootproject"

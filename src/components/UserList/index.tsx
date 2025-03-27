@@ -12,17 +12,64 @@ import { CometChatUser } from '../../types';
 import { UserListProps, UserWithStatus } from '../../types/userList.types';
 import { UserItem } from './UserItem';
 import { styles } from './styles';
+import { CometChat } from '@cometchat/chat-sdk-react-native';
 
 const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
   const [users, setUsers] = useState<UserWithStatus[]>([]);
   const unsubscribeFunctions = React.useRef<{ [key: string]: () => void }>({});
+  const typingTimeouts = React.useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   useEffect(() => {
     loadUsers();
+    setupTypingListener();
     return () => {
       Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
+      Object.values(typingTimeouts.current).forEach(timeout => clearTimeout(timeout));
     };
   }, []);
+
+  const setupTypingListener = () => {
+    const typingListenerId = 'user_list_typing_listener';
+    CometChat.addMessageListener(
+      typingListenerId,
+      new CometChat.MessageListener({
+        onTypingStarted: (typingIndicator: CometChat.TypingIndicator) => {
+          const senderId = typingIndicator.getSender().getUid();
+          setUsers(prevUsers => 
+            prevUsers.map(user => 
+              user.uid === senderId ? { ...user, isTyping: true } : user
+            )
+          );
+
+          // Clear any existing timeout
+          if (typingTimeouts.current[senderId]) {
+            clearTimeout(typingTimeouts.current[senderId]);
+          }
+
+          // Set new timeout to clear typing status after 3 seconds
+          typingTimeouts.current[senderId] = setTimeout(() => {
+            setUsers(prevUsers => 
+              prevUsers.map(user => 
+                user.uid === senderId ? { ...user, isTyping: false } : user
+              )
+            );
+          }, 3000);
+        },
+        onTypingEnded: (typingIndicator: CometChat.TypingIndicator) => {
+          const senderId = typingIndicator.getSender().getUid();
+          setUsers(prevUsers => 
+            prevUsers.map(user => 
+              user.uid === senderId ? { ...user, isTyping: false } : user
+            )
+          );
+        }
+      })
+    );
+
+    return () => {
+      CometChat.removeMessageListener(typingListenerId);
+    };
+  };
 
   const loadUsers = async () => {
     try {
@@ -32,7 +79,8 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
         uid: user.uid,
         name: user.name,
         avatar: user.avatar,
-        status: 'offline'
+        status: 'offline',
+        isTyping: false
       }));
       setUsers(convertedUsers);
 
@@ -54,6 +102,7 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
   const handleLogout = async () => {
     try {
       Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
+      Object.values(typingTimeouts.current).forEach(timeout => clearTimeout(timeout));
       await logoutCometChat();
       onLogout();
     } catch (error) {

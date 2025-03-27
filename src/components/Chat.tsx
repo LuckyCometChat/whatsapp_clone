@@ -14,7 +14,7 @@ import {
   Alert,
   Modal
 } from 'react-native';
-import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit } from '../services/cometChat';
+import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage } from '../types';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 
@@ -28,6 +28,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [userStatus, setUserStatus] = useState<'online' | 'offline'>('offline');
+  const [isTyping, setIsTyping] = useState(false);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [editText, setEditText] = useState('');
   const [showMessageOptions, setShowMessageOptions] = useState(false);
@@ -41,6 +42,26 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     unsubscribeRef.current = subscribeToUserStatus(selectedUser.uid, (status) => {
       setUserStatus(status);
     });
+
+    // Add typing indicator listener
+    const typingListenerId = 'chat_typing_listener';
+    CometChat.addMessageListener(
+      typingListenerId,
+      new CometChat.MessageListener({
+        onTypingStarted: (typingIndicator: CometChat.TypingIndicator) => {
+          const senderId = typingIndicator.getSender().getUid();
+          if (senderId === selectedUser.uid) {
+            setIsTyping(true);
+          }
+        },
+        onTypingEnded: (typingIndicator: CometChat.TypingIndicator) => {
+          const senderId = typingIndicator.getSender().getUid();
+          if (senderId === selectedUser.uid) {
+            setIsTyping(false);
+          }
+        }
+      })
+    );
 
     const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
       const messageId = deletedMessage.getId().toString(); 
@@ -75,6 +96,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
       }
       unsubscribeDeletion();
       unsubscribeEdit();
+      CometChat.removeMessageListener(typingListenerId);
     };
   }, [selectedUser]);
 
@@ -107,6 +129,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     if (!newMessage.trim()) return;
 
     try {
+      // Clear typing indicator before sending message
+      await typeMessageEnded(selectedUser.uid);
+      
       const sentMessage = await sendMessage(selectedUser.uid, newMessage);
       const cometChatMessage = sentMessage as unknown as CometChatMessage;
       const convertedMessage: ChatMessage = {
@@ -403,6 +428,35 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
     );
   };
 
+  // Add debounced typing indicator
+  const debouncedTypingIndicator = useRef<NodeJS.Timeout | null>(null);
+  const handleTyping = () => {
+    if (debouncedTypingIndicator.current) {
+      clearTimeout(debouncedTypingIndicator.current);
+    }
+    
+    debouncedTypingIndicator.current = setTimeout(async () => {
+      try {
+        await typeMessageStarted(selectedUser.uid);
+      } catch (error) {
+        console.error("Error starting typing indicator:", error);
+      }
+    }, 100); // Reduced debounce time to 100ms for more real-time feel
+  };
+
+  const handleTypingEnd = async () => {
+    if (debouncedTypingIndicator.current) {
+      clearTimeout(debouncedTypingIndicator.current);
+      debouncedTypingIndicator.current = null;
+    }
+    
+    try {
+      await typeMessageEnded(selectedUser.uid);
+    } catch (error) {
+      console.error("Error ending typing indicator:", error);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={styles.header.backgroundColor} barStyle="light-content" />
@@ -440,7 +494,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
               styles.chatSubtitle,
               { color: userStatus === 'online' ? '#25D366' : '#999' }
             ]}>
-              {userStatus === 'online' ? 'Online' : 'Offline'}
+              {isTyping ? 'typing...' : userStatus === 'online' ? 'Online' : 'Offline'}
             </Text>
           </View>
         </View>
@@ -463,7 +517,12 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack }) => {
           <TextInput
             style={styles.chatInput}
             value={newMessage}
-            onChangeText={setNewMessage}
+            onChangeText={(text) => {
+              setNewMessage(text);
+              handleTyping();
+            }}
+            onFocus={handleTyping}
+            onBlur={handleTypingEnd}
             placeholder="Type a message"
             placeholderTextColor="#888"
             multiline

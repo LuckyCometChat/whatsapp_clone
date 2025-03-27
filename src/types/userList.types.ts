@@ -7,4 +7,5 @@ export interface UserListProps {
 
 export interface UserWithStatus extends User {
   status: 'online' | 'offline';
+  isTyping?: boolean;
 } 
