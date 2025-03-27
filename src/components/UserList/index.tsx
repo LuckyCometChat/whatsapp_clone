@@ -39,12 +39,12 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout, userStatuse
             )
           );
 
-          // Clear any existing timeout
+         
           if (typingTimeouts.current[senderId]) {
             clearTimeout(typingTimeouts.current[senderId]);
           }
 
-          // Set new timeout to clear typing status after 3 seconds
+          
           typingTimeouts.current[senderId] = setTimeout(() => {
             setUsers(prevUsers => 
               prevUsers.map(user => 

@@ -19,6 +19,7 @@ interface LoginProps {
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [uid, setUid] = useState('');
+
  
   const handleLogin = async () => {
     if (!uid.trim() ) {
@@ -29,8 +30,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     try {
       const user = await loginCometChat(uid);
       console.log(user.getStatus());
-      
-      onLogin(user );
+      onLogin(user);
     } catch (error) {
       Alert.alert("Login Error", "Invalid credentials or login failed");
     }

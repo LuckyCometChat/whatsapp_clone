@@ -9,7 +9,7 @@ interface UserItemProps {
 }
 
 export const UserItem: React.FC<UserItemProps> = ({ user, onPress }) => {
-  const isOnline = user.status === 'online';
+  const isOnline = user.getStatus?.() === 'online';
 
   return (
     <TouchableOpacity 

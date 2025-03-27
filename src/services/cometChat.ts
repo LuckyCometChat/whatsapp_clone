@@ -67,6 +67,33 @@ export const fetchMessages = async (receiverUid: string) => {
   }
 };
 
+
+const markAsDelivered=async(messageId:string, recieverId:string, recieverType:string, senderId: string)=>{
+  try{
+    const message = new CometChat.TextMessage(messageId, '', CometChat.RECEIVER_TYPE.USER);
+    message.setReceiverId(recieverId);
+    message.setReceiverType(recieverType);
+    message.setSender(new CometChat.User(senderId));
+    CometChat.markAsDelivered(message);
+  }catch(error){
+    console.error("Error marking message as delivered:", error);
+    throw error;
+  }
+}
+
+const markAsRead=async(messageId:string, recieverId:string, recieverType:string, senderId: string)=>{
+  try{
+    const message = new CometChat.TextMessage(messageId, '', CometChat.RECEIVER_TYPE.USER);
+    message.setReceiverId(recieverId);
+    message.setReceiverType(recieverType);
+    message.setSender(new CometChat.User(senderId));
+    CometChat.markAsRead(message);
+  }catch(error){
+    console.error("Error marking message as read:", error);
+    throw error;
+  }
+}
+
 export const subscribeToMessageStatus = (messageId: string, callback: (status: 'sent' | 'delivered' | 'seen') => void) => {
   const listenerID = `message_status_${messageId}`;
   
@@ -226,18 +253,7 @@ export const subscribeToUserStatus = (uid: string, callback: (status: 'online' |
   };
 };
 
-const getStatusIcon = (status: 'sent' | 'delivered' | 'seen') => {
-  switch (status) {
-    case 'sent':
-      return '✓'; 
-    case 'delivered':
-      return '✓✓'; 
-    case 'seen':
-      return '✓✓'; 
-    default:
-      return '✓';
-  }
-};
+
 
 export const deleteMessage = async (messageId: string): Promise<void> => {
   try {
