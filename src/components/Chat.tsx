@@ -433,6 +433,21 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const handleRemoveReaction = async (messageId: string, emoji: string) => {
     try {
       await CometChat.removeReaction(messageId, emoji);
+      // Update the local state immediately to reflect the removal
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg.id === messageId) {
+            const updatedReactions = msg.reactions?.filter(reaction => 
+              reaction.emoji !== emoji || !reaction.reactedByMe
+            ) || [];
+            return {
+              ...msg,
+              reactions: updatedReactions
+            };
+          }
+          return msg;
+        })
+      );
     } catch (error) {
       console.error("Error removing reaction:", error);
       Alert.alert("Error", "Failed to remove reaction. Please try again.");
@@ -737,7 +752,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f0f0',
-    marginTop: Platform.OS === 'android' ? 10:0,
+    marginTop: Platform.OS === 'android' ? 1:0,
     
   },
   header: {
