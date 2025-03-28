@@ -68,25 +68,25 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       })
     );
 
-    // Add user status listener
+   
     const userStatusListenerId = 'user_status_listener';
     CometChat.addUserListener(
       userStatusListenerId,
       new CometChat.UserListener({
         onUserOnline: (onlineUser: CometChat.User) => {
           if (onlineUser.getUid() === selectedUser.uid) {
-            // Status updates are now handled by the parent component
+          
           }
         },
         onUserOffline: (offlineUser: CometChat.User) => {
           if (offlineUser.getUid() === selectedUser.uid) {
-            // Status updates are now handled by the parent component
+           
           }
         }
       })
     );
 
-    // Set initial status
+   
     if (selectedUser.getStatus) {
      
     }
@@ -118,7 +118,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       );
     });
 
-    // Add reaction listener
+    
     reactionListenerRef.current = 'reaction_listener';
     CometChat.addMessageListener(
       reactionListenerRef.current,
@@ -200,7 +200,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         })) || []
       }));
 
-      // Sort messages by timestamp in ascending order
+      
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
     } catch (error) {
@@ -433,7 +433,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const handleRemoveReaction = async (messageId: string, emoji: string) => {
     try {
       await CometChat.removeReaction(messageId, emoji);
-      // Update the local state immediately to reflect the removal
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
@@ -636,7 +635,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     );
   };
 
-  // Add debounced typing indicator
+  
   const debouncedTypingIndicator = useRef<NodeJS.Timeout | null>(null);
   const handleTyping = () => {
     if (debouncedTypingIndicator.current) {
@@ -752,7 +751,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f0f0f0',
-    marginTop: Platform.OS === 'android' ? 1:0,
+    marginTop: Platform.OS === 'android' ? 10:0,
     
   },
   header: {

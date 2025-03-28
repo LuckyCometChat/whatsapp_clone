@@ -7,7 +7,6 @@ export const setupChatListeners = (
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   currentUser: { uid: string }
 ) => {
-  // Typing indicator listener
   const typingListenerId = 'chat_typing_listener';
   CometChat.addMessageListener(
     typingListenerId,
@@ -27,19 +26,19 @@ export const setupChatListeners = (
     })
   );
 
-  // User status listener
+
   const userStatusListenerId = 'user_status_listener';
   CometChat.addUserListener(
     userStatusListenerId,
     new CometChat.UserListener({
       onUserOnline: (onlineUser: CometChat.User) => {
         if (onlineUser.getUid() === selectedUser.uid) {
-          // Status updates are handled by the parent component
+         
         }
       },
       onUserOffline: (offlineUser: CometChat.User) => {
         if (offlineUser.getUid() === selectedUser.uid) {
-          // Status updates are handled by the parent component
+         
         }
       }
     })
