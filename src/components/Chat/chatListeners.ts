@@ -33,12 +33,12 @@ export const setupChatListeners = (
     new CometChat.UserListener({
       onUserOnline: (onlineUser: CometChat.User) => {
         if (onlineUser.getUid() === selectedUser.uid) {
-         
+          // Status updates are handled by the App component
         }
       },
       onUserOffline: (offlineUser: CometChat.User) => {
         if (offlineUser.getUid() === selectedUser.uid) {
-         
+          // Status updates are handled by the App component
         }
       }
     })

@@ -31,16 +31,44 @@ const App = () => {
     if (isLoggedIn && currentUser) {
       // Add user status listener
       userStatusListenerRef.current = 'user_status_listener';
+      
+      // First, get all users' status
+      const fetchUsersStatus = async () => {
+        try {
+          const limit = 30;
+          const usersRequest = new CometChat.UsersRequestBuilder()
+            .setLimit(limit)
+            .build();
+          
+          const users = await usersRequest.fetchNext();
+          const statusUpdates: { [key: string]: 'online' | 'offline' } = {};
+          users.forEach((user: CometChat.User) => {
+            statusUpdates[user.getUid()] = user.getStatus() === CometChat.USER_STATUS.ONLINE ? 'online' : 'offline';
+          });
+          setUserStatuses(prev => ({
+            ...prev,
+            ...statusUpdates
+          }));
+        } catch (error) {
+          console.error("Error fetching users status:", error);
+        }
+      };
+      
+      fetchUsersStatus();
+
+      // Then listen for status changes
       CometChat.addUserListener(
         userStatusListenerRef.current,
         new CometChat.UserListener({
           onUserOnline: (onlineUser: CometChat.User) => {
+            console.log("User online:", onlineUser.getUid());
             setUserStatuses(prev => ({
               ...prev,
               [onlineUser.getUid()]: 'online'
             }));
           },
           onUserOffline: (offlineUser: CometChat.User) => {
+            console.log("User offline:", offlineUser.getUid());
             setUserStatuses(prev => ({
               ...prev,
               [offlineUser.getUid()]: 'offline'
@@ -59,9 +87,10 @@ const App = () => {
 
   const handleLogin = (user: User, status: 'online' | 'offline') => {
     setCurrentUser(user);
+    // Set the current user's status and initialize userStatuses
     setUserStatuses(prev => ({
       ...prev,
-      [user.uid]: status
+      [user.uid]: 'online' // Always set to online when logging in
     }));
     setIsLoggedIn(true);
   };
@@ -97,6 +126,12 @@ const App = () => {
           selectedUser={selectedUser}
           onBack={handleBack}
           userStatuses={userStatuses}
+          onUserStatusChange={(uid, status) => {
+            setUserStatuses(prev => ({
+              ...prev,
+              [uid]: status
+            }));
+          }}
         />
       )}
     </View>

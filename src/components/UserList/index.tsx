@@ -74,14 +74,14 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout, userStatuse
       const fetchedUsers = await fetchUsers();
       
       const convertedUsers: UserWithStatus[] = (fetchedUsers as unknown as CometChatUser[]).map(cometChatUser => {
-        const status = cometChatUser.getStatus() as 'online' | 'offline';
+        const status = userStatuses[cometChatUser.getUid()] || 'offline';
         return {
           uid: cometChatUser.getUid(),
           name: cometChatUser.getName(),
           avatar: cometChatUser.getAvatar(),
           status: status,
           isTyping: false,
-          getStatus: () => status
+          getStatus: () => userStatuses[cometChatUser.getUid()] || 'offline'
         };
       });
       setUsers(convertedUsers);
@@ -89,6 +89,11 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout, userStatuse
       console.error("Error loading users:", error);
     }
   };
+
+  // Update users when userStatuses changes
+  useEffect(() => {
+    loadUsers();
+  }, [userStatuses]);
 
   const handleLogout = async () => {
     try {

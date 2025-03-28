@@ -14,7 +14,7 @@ import { User } from '../types';
 
 
 interface LoginProps {
-  onLogin: (user: User) => void;
+  onLogin: (user: User, status: 'online' | 'offline') => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
@@ -22,15 +22,20 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
  
   const handleLogin = async () => {
-    if (!uid.trim() ) {
-      Alert.alert("Login Error", "Please enter both UID and password");
+    if (!uid.trim()) {
+      Alert.alert("Login Error", "Please enter UID");
       return;
     }
 
     try {
-      const user = await loginCometChat(uid);
-      console.log(user.getStatus());
-      onLogin(user);
+      const cometChatUser = await loginCometChat(uid);
+      const user: User = {
+        uid: cometChatUser.getUid(),
+        name: cometChatUser.getName(),
+        avatar: cometChatUser.getAvatar(),
+        getStatus: () => 'online'
+      };
+      onLogin(user, 'online');
     } catch (error) {
       Alert.alert("Login Error", "Invalid credentials or login failed");
     }

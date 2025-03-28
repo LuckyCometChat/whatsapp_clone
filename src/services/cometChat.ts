@@ -283,4 +283,60 @@ export const subscribeToMessageDeletion = (callback: (message: CometChat.BaseMes
   return () => {
     CometChat.removeMessageListener(listenerID);
   };
+};
+
+export const subscribeToMessages = (callback: (message: CometChat.BaseMessage) => void) => {
+  const listenerID = 'message_listener';
+  
+  CometChat.addMessageListener(
+    listenerID,
+    new CometChat.MessageListener({
+      onTextMessageReceived: (message: CometChat.TextMessage) => {
+        console.log("Text message received:", message);
+        callback(message);
+      },
+      onMediaMessageReceived: (message: CometChat.MediaMessage) => {
+        console.log("Media message received:", message);
+        callback(message);
+      },
+      onCustomMessageReceived: (message: CometChat.CustomMessage) => {
+        console.log("Custom message received:", message);
+        callback(message);
+      },
+      onError: (error: CometChat.CometChatException) => {
+        console.error("Message listener error:", error);
+      }
+    })
+  );
+
+  return () => {
+    CometChat.removeMessageListener(listenerID);
+    console.log("Message listener removed:", listenerID);
+  };
+};
+
+export const subscribeToReactions = (callback: (message: CometChat.BaseMessage) => void) => {
+  const listenerID = 'reaction_listener';
+  
+  CometChat.addMessageListener(
+    listenerID,
+    new CometChat.MessageListener({
+      onMessageReactionAdded: (message: CometChat.BaseMessage) => {
+        console.log("Reaction added:", message);
+        callback(message);
+      },
+      onMessageReactionRemoved: (message: CometChat.BaseMessage) => {
+        console.log("Reaction removed:", message);
+        callback(message);
+      },
+      onError: (error: CometChat.CometChatException) => {
+        console.error("Reaction listener error:", error);
+      }
+    })
+  );
+
+  return () => {
+    CometChat.removeMessageListener(listenerID);
+    console.log("Reaction listener removed:", listenerID);
+  };
 }; 
