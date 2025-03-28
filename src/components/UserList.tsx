@@ -41,9 +41,10 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
         uid: user.uid,
         name: user.name,
         avatar: user.avatar,
-        status: 'offline'
+        status: user.getStatus() === 'online' ? 'online' : 'offline'
       }));
       setUsers(convertedUsers);
+      console.log('Users:', convertedUsers);
 
     
       convertedUsers.forEach(user => {
@@ -205,7 +206,7 @@ const styles = StyleSheet.create({
   onlineIndicatorInner: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: 7,
   },
   userInfo: {
     flex: 1,

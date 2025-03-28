@@ -38,8 +38,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const [showReactions, setShowReactions] = useState(false);
   const [selectedMessageForReaction, setSelectedMessageForReaction] = useState<ChatMessage | null>(null);
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
-  const debouncedTypingIndicator = useRef<NodeJS.Timeout | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  
+
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
