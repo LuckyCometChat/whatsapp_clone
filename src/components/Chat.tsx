@@ -23,9 +23,10 @@ interface ChatProps {
   selectedUser: User;
   onBack: () => void;
   userStatuses: { [key: string]: 'online' | 'offline' };
+  onUserStatusChange: (uid: string, status: 'online' | 'offline') => void;
 }
 
-const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStatuses }) => {
+const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStatuses, onUserStatusChange }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -45,10 +46,14 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   useEffect(() => {
     loadMessages();
     unsubscribeRef.current = subscribeToUserStatus(selectedUser.uid, (status) => {
-     
+      if (selectedUser.uid === selectedUser.uid) {
+        const updatedStatus = status === 'online' ? 'online' : 'offline';
+        if (onUserStatusChange) {
+          onUserStatusChange(selectedUser.uid, updatedStatus);
+        }
+      }
     });
 
-   
     const typingListenerId = 'chat_typing_listener';
     CometChat.addMessageListener(
       typingListenerId,
@@ -68,28 +73,32 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       })
     );
 
-   
     const userStatusListenerId = 'user_status_listener';
     CometChat.addUserListener(
       userStatusListenerId,
       new CometChat.UserListener({
         onUserOnline: (onlineUser: CometChat.User) => {
           if (onlineUser.getUid() === selectedUser.uid) {
-          
+            const status = onlineUser.getStatus();
+            if (status === 'online') {
+              if (onUserStatusChange) {
+                onUserStatusChange(selectedUser.uid, 'online');
+              }
+            }
           }
         },
         onUserOffline: (offlineUser: CometChat.User) => {
           if (offlineUser.getUid() === selectedUser.uid) {
-           
+            const status = offlineUser.getStatus();
+            if (status === 'offline') {
+              if (onUserStatusChange) {
+                onUserStatusChange(selectedUser.uid, 'offline');
+              }
+            }
           }
         }
       })
     );
-
-   
-    if (selectedUser.getStatus) {
-     
-    }
 
     const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
       const messageId = deletedMessage.getId().toString(); 
@@ -102,7 +111,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       );
     });
 
-   
     const unsubscribeEdit = subscribeToMessageEdit((editedMessage) => {
       setMessages(prevMessages => 
         prevMessages.map(msg => 
@@ -118,7 +126,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       );
     });
 
-    
     reactionListenerRef.current = 'reaction_listener';
     CometChat.addMessageListener(
       reactionListenerRef.current,
@@ -176,7 +183,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         CometChat.removeMessageListener(reactionListenerRef.current);
       }
     };
-  }, [selectedUser, currentUser.uid]);
+  }, [selectedUser, currentUser.uid, onUserStatusChange]);
 
   const loadMessages = async () => {
     try {
@@ -200,7 +207,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         })) || []
       }));
 
-      
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
     } catch (error) {
@@ -212,7 +218,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     if (!newMessage.trim()) return;
 
     try {
-   
       await typeMessageEnded(selectedUser.uid);
       
       const sentMessage = await sendMessage(selectedUser.uid, newMessage);
