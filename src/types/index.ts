@@ -21,6 +21,12 @@ export interface CometChatMessage {
   type: string;
 }
 
+export interface Reaction {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   text: string;
@@ -34,4 +40,5 @@ export interface ChatMessage {
   status: 'sent' | 'delivered' | 'seen';
   editedAt?: number;
   editedBy?: string;
+  reactions?: Reaction[];
 } 

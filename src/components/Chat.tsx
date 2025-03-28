@@ -15,7 +15,7 @@ import {
   Modal
 } from 'react-native';
 import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded } from '../services/cometChat';
-import { User, ChatMessage, CometChatMessage } from '../types';
+import { User, ChatMessage, CometChatMessage, Reaction } from '../types';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 
 interface ChatProps {
@@ -36,6 +36,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const [messageOptionsPosition, setMessageOptionsPosition] = useState({ x: 0, y: 0 });
   const flatListRef = useRef<FlatList>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const [showReactions, setShowReactions] = useState(false);
+  const [selectedMessageForReaction, setSelectedMessageForReaction] = useState<ChatMessage | null>(null);
+  const reactionListenerRef = useRef<string | null>(null);
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
@@ -115,6 +118,52 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       );
     });
 
+    // Add reaction listener
+    reactionListenerRef.current = 'reaction_listener';
+    CometChat.addMessageListener(
+      reactionListenerRef.current,
+      new CometChat.MessageListener({
+        onMessageReactionAdded: (message: CometChat.BaseMessage) => {
+          const messageId = message.getId().toString();
+          setMessages(prevMessages => 
+            prevMessages.map(msg => {
+              if (msg.id === messageId) {
+                const reactions = message.getReactions() || [];
+                return {
+                  ...msg,
+                  reactions: reactions.map(reaction => ({
+                    emoji: reaction.getReaction(),
+                    count: reaction.getCount(),
+                    reactedByMe: reaction.getReactedByMe()
+                  }))
+                };
+              }
+              return msg;
+            })
+          );
+        },
+        onMessageReactionRemoved: (message: CometChat.BaseMessage) => {
+          const messageId = message.getId().toString();
+          setMessages(prevMessages => 
+            prevMessages.map(msg => {
+              if (msg.id === messageId) {
+                const reactions = message.getReactions() || [];
+                return {
+                  ...msg,
+                  reactions: reactions.map(reaction => ({
+                    emoji: reaction.getReaction(),
+                    count: reaction.getCount(),
+                    reactedByMe: reaction.getReactedByMe()
+                  }))
+                };
+              }
+              return msg;
+            })
+          );
+        }
+      })
+    );
+
     return () => {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
@@ -123,8 +172,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       unsubscribeEdit();
       CometChat.removeMessageListener(typingListenerId);
       CometChat.removeUserListener(userStatusListenerId);
+      if (reactionListenerRef.current) {
+        CometChat.removeMessageListener(reactionListenerRef.current);
+      }
     };
-  }, [selectedUser]);
+  }, [selectedUser, currentUser.uid]);
 
   const loadMessages = async () => {
     try {
@@ -140,7 +192,12 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         },
         sentAt: msg.sentAt,
         type: msg.type,
-        status: 'sent'
+        status: 'sent',
+        reactions: (msg as any).getReactions?.()?.map((reaction: any) => ({
+          emoji: reaction.getReaction(),
+          count: reaction.getCount(),
+          reactedByMe: reaction.getReactedByMe()
+        })) || []
       }));
 
       // Sort messages by timestamp in ascending order
@@ -170,7 +227,12 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         },
         sentAt: cometChatMessage.sentAt,
         type: cometChatMessage.type,
-        status: 'sent'
+        status: 'sent',
+        reactions: (cometChatMessage as any).getReactions?.()?.map((reaction: any) => ({
+          emoji: reaction.getReaction(),
+          count: reaction.getCount(),
+          reactedByMe: reaction.getReactedByMe()
+        })) || []
       };
       setMessages(prevMessages => [...prevMessages, convertedMessage]);
       setNewMessage('');
@@ -181,12 +243,10 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   };
 
   const handleLongPress = (message: ChatMessage, event: any) => {
-    if (message.sender.uid === currentUser.uid) {
-      const { pageX, pageY } = event.nativeEvent;
-      setMessageOptionsPosition({ x: pageX, y: pageY });
-      setSelectedMessage(message);
-      setShowMessageOptions(true);
-    }
+    const { pageX, pageY } = event.nativeEvent;
+    setMessageOptionsPosition({ x: pageX, y: pageY });
+    setSelectedMessage(message);
+    setShowMessageOptions(true);
   };
 
   const handleEditMessage = async () => {
@@ -329,18 +389,124 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         ]}>
           <TouchableOpacity 
             style={styles.optionButton}
-            onPress={handleEditMessage}
+            onPress={() => {
+              setShowMessageOptions(false);
+              if (selectedMessage) {
+                setSelectedMessageForReaction(selectedMessage);
+                setShowReactions(true);
+              }
+            }}
           >
-            <Text style={styles.optionText}>Edit</Text>
+            <Text style={styles.optionText}>React</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.optionButton}
-            onPress={handleDeleteMessage}
-          >
-            <Text style={[styles.optionText, styles.deleteOption]}>Delete</Text>
-          </TouchableOpacity>
+          {selectedMessage?.sender.uid === currentUser.uid && (
+            <>
+              <TouchableOpacity 
+                style={styles.optionButton}
+                onPress={handleEditMessage}
+              >
+                <Text style={styles.optionText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.optionButton}
+                onPress={handleDeleteMessage}
+              >
+                <Text style={[styles.optionText, styles.deleteOption]}>Delete</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </TouchableOpacity>
+    </Modal>
+  );
+
+  const handleAddReaction = async (messageId: string, emoji: string) => {
+    try {
+      await CometChat.addReaction(messageId, emoji);
+      setShowReactions(false);
+    } catch (error) {
+      console.error("Error adding reaction:", error);
+      Alert.alert("Error", "Failed to add reaction. Please try again.");
+    }
+  };
+
+  const handleRemoveReaction = async (messageId: string, emoji: string) => {
+    try {
+      await CometChat.removeReaction(messageId, emoji);
+    } catch (error) {
+      console.error("Error removing reaction:", error);
+      Alert.alert("Error", "Failed to remove reaction. Please try again.");
+    }
+  };
+
+  const handleReactionPress = (message: ChatMessage) => {
+    setSelectedMessageForReaction(message);
+    setShowReactions(true);
+  };
+
+  const renderReactions = (message: ChatMessage) => {
+    if (!message.reactions || message.reactions.length === 0) return null;
+
+    return (
+      <View style={styles.reactionsContainer}>
+        {message.reactions.map((reaction, index) => (
+          <TouchableOpacity
+            key={index}
+            style={[
+              styles.reactionBubble,
+              reaction.reactedByMe && styles.reactedBubble
+            ]}
+            onPress={() => {
+              if (reaction.reactedByMe) {
+                handleRemoveReaction(message.id, reaction.emoji);
+              } else {
+                handleAddReaction(message.id, reaction.emoji);
+              }
+            }}
+          >
+            <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+            <Text style={styles.reactionCount}>{reaction.count}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  const renderReactionPicker = () => (
+    <Modal
+      visible={showReactions}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowReactions(false)}
+    >
+      <View style={styles.reactionPickerContainer}>
+        <View style={styles.reactionPicker}>
+          <View style={styles.reactionPickerHeader}>
+            <Text style={styles.reactionPickerTitle}>Add Reaction</Text>
+            <TouchableOpacity 
+              onPress={() => setShowReactions(false)}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeButtonText}>×</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.reactionGrid}>
+            {['😊', '😂', '👍', '❤️', '😍', '😭', '😅', '😆'].map((emoji, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.reactionOption}
+                onPress={() => {
+                  if (selectedMessageForReaction) {
+                    handleAddReaction(selectedMessageForReaction.id, emoji);
+                  }
+                }}
+              >
+                <Text style={styles.reactionOptionEmoji}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </View>
     </Modal>
   );
 
@@ -429,6 +595,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                     )}
                   </View>
                 )}
+                {renderReactions(item)}
               </>
             )}
           </View>
@@ -561,6 +728,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+      {renderReactionPicker()}
     </SafeAreaView>
   );
 };
@@ -851,6 +1019,78 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     fontWeight: "bold",
+  },
+  messageContentContainer: {
+    maxWidth: '70%',
+  },
+  reactionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  reactionBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 4,
+    marginBottom: 4,
+  },
+  reactedBubble: {
+    backgroundColor: '#e3f2fd',
+  },
+  reactionEmoji: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  reactionCount: {
+    fontSize: 12,
+    color: '#666',
+  },
+  reactionPickerContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  reactionPicker: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 16,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+  },
+  reactionPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  closeButtonText: {
+    fontSize: 24,
+    color: '#666',
+  },
+  reactionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  reactionOption: {
+    padding: 8,
+    margin: 4,
+  },
+  reactionOptionEmoji: {
+    fontSize: 24,
+  },
+  reactionPickerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#075E54',
   },
 });
 
