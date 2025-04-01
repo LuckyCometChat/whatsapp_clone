@@ -15,7 +15,7 @@ import {
   Modal
 } from 'react-native';
 import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded } from '../services/cometChat';
-import { User, ChatMessage, CometChatMessage, Reaction } from '../types';
+import { User, ChatMessage, CometChatMessage, Reaction } from '../types/index';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 
 interface ChatProps {
@@ -316,31 +316,48 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     try {
       const fetchedMessages = await fetchMessages(selectedUser.uid);
 
-      
       const convertedMessages: ChatMessage[] = (fetchedMessages as unknown as CometChat.BaseMessage[])
         .filter(msg => (msg as any).getCategory?.() !== "action")
-        .map(msg => ({
-          id: msg.getId().toString(),
-          text: (msg as CometChat.TextMessage).getText(),
-          sender: {
-            uid: msg.getSender().getUid(),
-            name: msg.getSender().getName(),
-            avatar: msg.getSender().getAvatar()
-          },
-          sentAt: msg.getSentAt(),
-          type: msg.getType(),
-          status: 'sent',
-          reactions: (msg as any).getReactions?.()?.map((reaction: any) => ({
-            emoji: reaction.getReaction(),
-            count: reaction.getCount(),
-            reactedByMe: reaction.getReactedByMe()
-          })) || []
-        }));
+        .map(msg => {
+          const isDeleted = (msg as any).getDeletedAt?.() !== undefined;
+          const editedAt = (msg as any).getEditedAt?.();
+          const editedBy = (msg as any).getEditedBy?.();
+          const readAt = (msg as any).getReadAt?.();
+          const deliveredAt = (msg as any).getDeliveredAt?.();
+          
+          // Determine message status
+          let status: 'sent' | 'delivered' | 'seen' = 'sent';
+          if (deliveredAt) {
+            status = 'delivered';
+          }
+          if (readAt) {
+            status = 'seen';
+          }
+          
+          return {
+            id: msg.getId().toString(),
+            text: isDeleted ? "This message was deleted" : (msg as CometChat.TextMessage).getText(),
+            sender: {
+              uid: msg.getSender().getUid(),
+              name: msg.getSender().getName(),
+              avatar: msg.getSender().getAvatar()
+            },
+            sentAt: msg.getSentAt(),
+            type: msg.getType(),
+            status: status,
+            editedAt: editedAt,
+            editedBy: editedBy,
+            reactions: (msg as any).getReactions?.()?.map((reaction: any) => ({
+              emoji: reaction.getReaction(),
+              count: reaction.getCount(),
+              reactedByMe: reaction.getReactedByMe()
+            })) || []
+          };
+        });
 
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
 
-     
       if (convertedMessages.length > 0) {
         const lastMessage = fetchedMessages[fetchedMessages.length - 1];
         await CometChat.markAsDelivered(lastMessage);
@@ -565,7 +582,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     try {
       await CometChat.addReaction(messageId, emoji);
       
-      // Update sender's state immediately
+  
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
@@ -582,7 +599,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
               };
               return { ...msg, reactions: updatedReactions };
             } else {
-              // Add new reaction
               return {
                 ...msg,
                 reactions: [...currentReactions, { emoji, count: 1, reactedByMe: true }]
@@ -603,8 +619,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const handleRemoveReaction = async (messageId: string, emoji: string) => {
     try {
       await CometChat.removeReaction(messageId, emoji);
-      
-      // Update sender's state immediately
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
@@ -781,7 +795,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                     <Text style={styles.messageTime}>{messageTime}</Text>
                     {isSentByMe && (
                       <Text style={styles.messageStatus}>
-                        {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
+                        {item.status === 'read' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
                       </Text>
                     )}
                     {isEdited && (
@@ -847,7 +861,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const markMessagesAsRead = async () => {
     try {
       const unreadMessages = messages.filter(
-        msg => msg.sender.uid !== currentUser.uid && msg.status !== 'seen'
+        msg => msg.sender.uid !== currentUser.uid && msg.status !== 'read'
       );
 
       for (const msg of unreadMessages) {

@@ -8,7 +8,7 @@ import {
   StatusBar
 } from 'react-native';
 import { fetchUsers, logoutCometChat } from '../../services/cometChat';
-import { CometChatUser } from '../../types';
+import { CometChatUser } from '../../types/index';
 import { UserListProps, UserWithStatus } from '../../types/userList.types';
 import { UserItem } from './UserItem';
 import { styles } from './styles';

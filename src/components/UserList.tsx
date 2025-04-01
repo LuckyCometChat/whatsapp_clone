@@ -11,7 +11,7 @@ import {
   Platform
 } from 'react-native';
 import { fetchUsers, logoutCometChat, subscribeToUserStatus } from '../services/cometChat';
-import { User, CometChatUser } from '../types';
+import { User, CometChatUser } from '../types/index';
 
 interface UserListProps {
   onUserSelect: (user: User) => void;
