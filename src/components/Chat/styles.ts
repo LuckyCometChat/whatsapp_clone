@@ -358,4 +358,29 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#075E54',
   },
+  chatContainer: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
+  },
+  messagesList: {
+    flexGrow: 1,
+    padding: 10,
+  },
+  loadingContainer: {
+    padding: 10,
+    alignItems: 'center',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    marginRight: 10,
+    fontSize: 16,
+    maxHeight: 100,
+  },
+  sendButtonDisabled: {
+    color: '#999',
+  },
 }); 

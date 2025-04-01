@@ -40,6 +40,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const [showReactions, setShowReactions] = useState(false);
   const [selectedMessageForReaction, setSelectedMessageForReaction] = useState<ChatMessage | null>(null);
   const reactionListenerRef = useRef<string | null>(null);
+  const messageListenerRef = useRef<string | null>(null);
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
@@ -171,6 +172,86 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       })
     );
 
+    messageListenerRef.current = 'chat_message_listener';
+    CometChat.addMessageListener(
+      messageListenerRef.current,
+      new CometChat.MessageListener({
+        onTextMessageReceived: (textMessage: CometChat.TextMessage) => {
+          const senderId = textMessage.getSender().getUid();
+          const receiver = textMessage.getReceiver() as CometChat.User;
+          const receiverId = receiver.getUid();
+
+          if (
+            (senderId === selectedUser.uid && receiverId === currentUser.uid) ||
+            (senderId === currentUser.uid && receiverId === selectedUser.uid)
+          ) {
+            if (textMessage.getData().text !== "") {
+              const convertedMessage: ChatMessage = {
+                id: textMessage.getId().toString(),
+                text: textMessage.getText(),
+                sender: {
+                  uid: textMessage.getSender().getUid(),
+                  name: textMessage.getSender().getName(),
+                  avatar: textMessage.getSender().getAvatar()
+                },
+                sentAt: textMessage.getSentAt(),
+                type: textMessage.getType(),
+                status: 'sent',
+                reactions: []
+              };
+              setMessages(prevMessages => [...prevMessages, convertedMessage]);
+            }
+          }
+
+          if (receiverId === currentUser.uid) {
+            CometChat.markAsDelivered(textMessage).then(() => {
+              setMessages(prevMessages =>
+                prevMessages.map(msg => {
+                  if (msg.id === textMessage.getId().toString()) {
+                    return {
+                      ...msg,
+                      status: 'seen'
+                    };
+                  }
+                  return msg;
+                })
+              );
+            });
+          }
+        },
+
+        onMessagesDelivered: (messageReceipt: CometChat.MessageReceipt) => {
+          const messageId = messageReceipt.getMessageId().toString();
+          setMessages(prevMessages =>
+            prevMessages.map(msg => {
+              if (msg.id === messageId) {
+                return {
+                  ...msg,
+                  status: 'delivered'
+                };
+              }
+              return msg;
+            })
+          );
+        },
+
+        onMessagesRead: (messageReceipt: CometChat.MessageReceipt) => {
+          const messageId = messageReceipt.getMessageId().toString();
+          setMessages(prevMessages =>
+            prevMessages.map(msg => {
+              if (msg.id === messageId) {
+                return {
+                  ...msg,
+                  status: 'seen'
+                };
+              }
+              return msg;
+            })
+          );
+        }
+      })
+    );
+
     return () => {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
@@ -181,6 +262,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       CometChat.removeUserListener(userStatusListenerId);
       if (reactionListenerRef.current) {
         CometChat.removeMessageListener(reactionListenerRef.current);
+      }
+      if (messageListenerRef.current) {
+        CometChat.removeMessageListener(messageListenerRef.current);
       }
     };
   }, [selectedUser, currentUser.uid, onUserStatusChange]);
@@ -607,7 +691,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                   <View style={styles.messageFooter}>
                     <Text style={styles.messageTime}>{messageTime}</Text>
                     {isSentByMe && (
-                      <Text style={styles.messageStatus}>✓✓</Text>
+                      <Text style={styles.messageStatus}>
+                        {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
+                      </Text>
                     )}
                     {isEdited && (
                       <Text style={styles.editedText}>edited</Text>
@@ -666,6 +752,31 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       await typeMessageEnded(selectedUser.uid);
     } catch (error) {
       console.error("Error ending typing indicator:", error);
+    }
+  };
+
+  const markMessagesAsRead = async () => {
+    try {
+      const unreadMessages = messages.filter(
+        msg => msg.sender.uid !== currentUser.uid && msg.status !== 'seen'
+      );
+
+      for (const msg of unreadMessages) {
+        await CometChat.markAsRead(msg.id);
+        setMessages(prevMessages =>
+          prevMessages.map(message => {
+            if (message.id === msg.id) {
+              return {
+                ...message,
+                status: 'seen'
+              };
+            }
+            return message;
+          })
+        );
+      }
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
     }
   };
 
