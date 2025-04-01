@@ -44,6 +44,78 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
+  const updateReactions = async (
+    reactionEvent: CometChat.ReactionEvent,
+    action: CometChat.REACTION_ACTION
+  ) => {
+    try {
+      const reaction = reactionEvent.getReaction();
+      const messageId = reaction?.getMessageId();
+
+      if (reaction && messageId) {
+        setMessages((prevMessages) => {
+          const updatedMessages = prevMessages.map((msg) => {
+            if (msg.id === messageId.toString()) {
+              try {
+                // Get the current reactions
+                const currentReactions = msg.reactions || [];
+                
+                // Create a new reaction object
+                const newReaction = {
+                  emoji: reaction.getReaction(),
+                  count: 1, // Default count for new reactions
+                  reactedByMe: reaction.getReactedBy() === currentUser.uid
+                };
+
+                // Update reactions based on action
+                let updatedReactions;
+                if (action === CometChat.REACTION_ACTION.REACTION_ADDED) {
+                  // Add or update reaction
+                  const existingIndex = currentReactions.findIndex(r => r.emoji === newReaction.emoji);
+                  if (existingIndex >= 0) {
+                    updatedReactions = [...currentReactions];
+                    updatedReactions[existingIndex] = {
+                      ...updatedReactions[existingIndex],
+                      count: updatedReactions[existingIndex].count + 1,
+                      reactedByMe: true
+                    };
+                  } else {
+                    updatedReactions = [...currentReactions, newReaction];
+                  }
+                } else {
+                  // Remove reaction
+                  updatedReactions = currentReactions.map(r => {
+                    if (r.emoji === newReaction.emoji) {
+                      return {
+                        ...r,
+                        count: Math.max(0, r.count - 1),
+                        reactedByMe: false
+                      };
+                    }
+                    return r;
+                  }).filter(r => r.count > 0);
+                }
+
+                return {
+                  ...msg,
+                  reactions: updatedReactions
+                };
+              } catch (error) {
+                console.error("Error updating message reactions:", error);
+                return msg;
+              }
+            }
+            return msg;
+          });
+
+          return updatedMessages;
+        });
+      }
+    } catch (error) {
+      console.error("Error processing reaction event:", error);
+    }
+  };
+
   useEffect(() => {
     loadMessages();
     unsubscribeRef.current = subscribeToUserStatus(selectedUser.uid, (status) => {
@@ -131,43 +203,13 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     CometChat.addMessageListener(
       reactionListenerRef.current,
       new CometChat.MessageListener({
-        onMessageReactionAdded: (message: CometChat.BaseMessage) => {
-          const messageId = message.getId().toString();
-          setMessages(prevMessages => 
-            prevMessages.map(msg => {
-              if (msg.id === messageId) {
-                const reactions = message.getReactions() || [];
-                return {
-                  ...msg,
-                  reactions: reactions.map(reaction => ({
-                    emoji: reaction.getReaction(),
-                    count: reaction.getCount(),
-                    reactedByMe: reaction.getReactedByMe()
-                  }))
-                };
-              }
-              return msg;
-            })
-          );
+        onMessageReactionAdded: (reactionEvent: CometChat.ReactionEvent) => {
+          console.log("Reaction added:", reactionEvent.getReaction());
+          updateReactions(reactionEvent, CometChat.REACTION_ACTION.REACTION_ADDED);
         },
-        onMessageReactionRemoved: (message: CometChat.BaseMessage) => {
-          const messageId = message.getId().toString();
-          setMessages(prevMessages => 
-            prevMessages.map(msg => {
-              if (msg.id === messageId) {
-                const reactions = message.getReactions() || [];
-                return {
-                  ...msg,
-                  reactions: reactions.map(reaction => ({
-                    emoji: reaction.getReaction(),
-                    count: reaction.getCount(),
-                    reactedByMe: reaction.getReactedByMe()
-                  }))
-                };
-              }
-              return msg;
-            })
-          );
+        onMessageReactionRemoved: (reactionEvent: CometChat.ReactionEvent) => {
+          console.log("Reaction removed:", reactionEvent.getReaction());
+          updateReactions(reactionEvent, CometChat.REACTION_ACTION.REACTION_REMOVED);
         }
       })
     );
@@ -266,6 +308,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       if (messageListenerRef.current) {
         CometChat.removeMessageListener(messageListenerRef.current);
       }
+      CometChat.removeMessageListener(reactionListenerRef.current);
     };
   }, [selectedUser, currentUser.uid, onUserStatusChange]);
 
@@ -273,7 +316,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     try {
       const fetchedMessages = await fetchMessages(selectedUser.uid);
 
-      // Filter out action messages and convert to ChatMessage type
+      
       const convertedMessages: ChatMessage[] = (fetchedMessages as unknown as CometChat.BaseMessage[])
         .filter(msg => (msg as any).getCategory?.() !== "action")
         .map(msg => ({
@@ -297,7 +340,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
 
-      // Mark the last message as delivered if there are messages
+     
       if (convertedMessages.length > 0) {
         const lastMessage = fetchedMessages[fetchedMessages.length - 1];
         await CometChat.markAsDelivered(lastMessage);
@@ -521,6 +564,35 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const handleAddReaction = async (messageId: string, emoji: string) => {
     try {
       await CometChat.addReaction(messageId, emoji);
+      
+      // Update sender's state immediately
+      setMessages(prevMessages => 
+        prevMessages.map(msg => {
+          if (msg.id === messageId) {
+            const currentReactions = msg.reactions || [];
+            const existingIndex = currentReactions.findIndex(r => r.emoji === emoji);
+            
+            if (existingIndex >= 0) {
+              // Update existing reaction
+              const updatedReactions = [...currentReactions];
+              updatedReactions[existingIndex] = {
+                ...updatedReactions[existingIndex],
+                count: updatedReactions[existingIndex].count + 1,
+                reactedByMe: true
+              };
+              return { ...msg, reactions: updatedReactions };
+            } else {
+              // Add new reaction
+              return {
+                ...msg,
+                reactions: [...currentReactions, { emoji, count: 1, reactedByMe: true }]
+              };
+            }
+          }
+          return msg;
+        })
+      );
+      
       setShowReactions(false);
     } catch (error) {
       console.error("Error adding reaction:", error);
@@ -531,16 +603,24 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const handleRemoveReaction = async (messageId: string, emoji: string) => {
     try {
       await CometChat.removeReaction(messageId, emoji);
+      
+      // Update sender's state immediately
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
-            const updatedReactions = msg.reactions?.filter(reaction => 
-              reaction.emoji !== emoji || !reaction.reactedByMe
-            ) || [];
-            return {
-              ...msg,
-              reactions: updatedReactions
-            };
+            const currentReactions = msg.reactions || [];
+            const updatedReactions = currentReactions.map(r => {
+              if (r.emoji === emoji) {
+                return {
+                  ...r,
+                  count: Math.max(0, r.count - 1),
+                  reactedByMe: false
+                };
+              }
+              return r;
+            }).filter(r => r.count > 0);
+            
+            return { ...msg, reactions: updatedReactions };
           }
           return msg;
         })

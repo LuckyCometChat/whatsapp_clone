@@ -44,7 +44,7 @@ export const setupChatListeners = (
     })
   );
 
-  // Reaction listener
+
   const reactionListenerId = 'reaction_listener';
   CometChat.addMessageListener(
     reactionListenerId,

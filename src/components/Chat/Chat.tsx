@@ -12,7 +12,7 @@ import {
   Alert
 } from 'react-native';
 import { fetchMessages, subscribeToMessageDeletion, subscribeToMessageEdit } from '../../services/cometChat';
-import { User, ChatMessage, CometChatMessage } from '../../types';
+import { User, ChatMessage,CometChatMessage  } from '../../types';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 import { setupChatListeners, cleanupChatListeners } from './chatListeners';
 import { handleSendMessage, handleEditMessage, handleDeleteMessage, handleTyping, handleTypingEnd } from './messageHandlers';

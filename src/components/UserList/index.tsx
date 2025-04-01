@@ -90,7 +90,7 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout, userStatuse
     }
   };
 
-  // Update users when userStatuses changes
+
   useEffect(() => {
     loadUsers();
   }, [userStatuses]);
