@@ -273,26 +273,35 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     try {
       const fetchedMessages = await fetchMessages(selectedUser.uid);
 
-      const convertedMessages: ChatMessage[] = (fetchedMessages as unknown as CometChatMessage[]).map(msg => ({
-        id: msg.id,
-        text: msg.text,
-        sender: {
-          uid: msg.sender.uid,
-          name: msg.sender.name,
-          avatar: msg.sender.avatar
-        },
-        sentAt: msg.sentAt,
-        type: msg.type,
-        status: 'sent',
-        reactions: (msg as any).getReactions?.()?.map((reaction: any) => ({
-          emoji: reaction.getReaction(),
-          count: reaction.getCount(),
-          reactedByMe: reaction.getReactedByMe()
-        })) || []
-      }));
+      // Filter out action messages and convert to ChatMessage type
+      const convertedMessages: ChatMessage[] = (fetchedMessages as unknown as CometChat.BaseMessage[])
+        .filter(msg => (msg as any).getCategory?.() !== "action")
+        .map(msg => ({
+          id: msg.getId().toString(),
+          text: (msg as CometChat.TextMessage).getText(),
+          sender: {
+            uid: msg.getSender().getUid(),
+            name: msg.getSender().getName(),
+            avatar: msg.getSender().getAvatar()
+          },
+          sentAt: msg.getSentAt(),
+          type: msg.getType(),
+          status: 'sent',
+          reactions: (msg as any).getReactions?.()?.map((reaction: any) => ({
+            emoji: reaction.getReaction(),
+            count: reaction.getCount(),
+            reactedByMe: reaction.getReactedByMe()
+          })) || []
+        }));
 
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
+
+      // Mark the last message as delivered if there are messages
+      if (convertedMessages.length > 0) {
+        const lastMessage = fetchedMessages[fetchedMessages.length - 1];
+        await CometChat.markAsDelivered(lastMessage);
+      }
     } catch (error) {
       console.error("Error loading messages:", error);
     }
