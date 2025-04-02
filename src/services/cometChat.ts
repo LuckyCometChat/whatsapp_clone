@@ -68,6 +68,8 @@ export const fetchMessages = async (receiverUid: string) => {
 };
 
 
+
+
 const markAsDelivered=async(messageId:string, recieverId:string, recieverType:string, senderId: string)=>{
   try{
     const message = new CometChat.TextMessage(messageId, '', CometChat.RECEIVER_TYPE.USER);
@@ -252,6 +254,8 @@ export const subscribeToUserStatus = (uid: string, callback: (status: 'online' |
     CometChat.removeUserListener(listenerID);
   };
 };
+
+
 
 
 

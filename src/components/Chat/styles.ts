@@ -383,4 +383,9 @@ export const styles = StyleSheet.create({
   sendButtonDisabled: {
     color: '#999',
   },
-}); 
+  filePickerButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+});
