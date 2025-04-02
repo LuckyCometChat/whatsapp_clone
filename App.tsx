@@ -29,10 +29,8 @@ const App = () => {
 
   useEffect(() => {
     if (isLoggedIn && currentUser) {
-      // Add user status listener
       userStatusListenerRef.current = 'user_status_listener';
       
-      // First, get all users' status
       const fetchUsersStatus = async () => {
         try {
           const limit = 30;
@@ -56,7 +54,7 @@ const App = () => {
       
       fetchUsersStatus();
 
-      // Then listen for status changes
+      // listen for status changes
       CometChat.addUserListener(
         userStatusListenerRef.current,
         new CometChat.UserListener({
@@ -87,10 +85,9 @@ const App = () => {
 
   const handleLogin = (user: User, status: 'online' | 'offline') => {
     setCurrentUser(user);
-    // Set the current user's status and initialize userStatuses
     setUserStatuses(prev => ({
       ...prev,
-      [user.uid]: 'online' // Always set to online when logging in
+      [user.uid]: 'online' 
     }));
     setIsLoggedIn(true);
   };

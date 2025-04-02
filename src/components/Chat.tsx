@@ -324,8 +324,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           const editedBy = (msg as any).getEditedBy?.();
           const readAt = (msg as any).getReadAt?.();
           const deliveredAt = (msg as any).getDeliveredAt?.();
-          
-          // Determine message status
           let status: 'sent' | 'delivered' | 'seen' = 'sent';
           if (deliveredAt) {
             status = 'delivered';
@@ -795,7 +793,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                     <Text style={styles.messageTime}>{messageTime}</Text>
                     {isSentByMe && (
                       <Text style={styles.messageStatus}>
-                        {item.status === 'read' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
+                        {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
                       </Text>
                     )}
                     {isEdited && (
@@ -861,7 +859,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const markMessagesAsRead = async () => {
     try {
       const unreadMessages = messages.filter(
-        msg => msg.sender.uid !== currentUser.uid && msg.status !== 'read'
+        msg => msg.sender.uid !== currentUser.uid && msg.status !== 'seen'
       );
 
       for (const msg of unreadMessages) {

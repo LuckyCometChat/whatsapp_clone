@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { fetchUsers, logoutCometChat, subscribeToUserStatus } from '../services/cometChat';
 import { User, CometChatUser } from '../types/index';
+import { CometChat } from '@cometchat/chat-sdk-react-native';
 
 interface UserListProps {
   onUserSelect: (user: User) => void;
@@ -20,6 +21,7 @@ interface UserListProps {
 
 interface UserWithStatus extends User {
   status: 'online' | 'offline';
+  isTyping?: boolean;
 }
 
 const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
@@ -28,10 +30,40 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
 
   useEffect(() => {
     loadUsers();
+    setupTypingListener();
     return () => {
       Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
     };
   }, []);
+
+  const setupTypingListener = () => {
+    const typingListenerId = 'user_list_typing_listener';
+    CometChat.addMessageListener(
+      typingListenerId,
+      new CometChat.MessageListener({
+        onTypingStarted: (typingIndicator: CometChat.TypingIndicator) => {
+          const senderId = typingIndicator.getSender().getUid();
+          setUsers(prevUsers => 
+            prevUsers.map(user => 
+              user.uid === senderId ? { ...user, isTyping: true } : user
+            )
+          );
+        },
+        onTypingEnded: (typingIndicator: CometChat.TypingIndicator) => {
+          const senderId = typingIndicator.getSender().getUid();
+          setUsers(prevUsers => 
+            prevUsers.map(user => 
+              user.uid === senderId ? { ...user, isTyping: false } : user
+            )
+          );
+        }
+      })
+    );
+
+    return () => {
+      CometChat.removeMessageListener(typingListenerId);
+    };
+  };
 
   const loadUsers = async () => {
     try {
@@ -41,12 +73,12 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
         uid: user.uid,
         name: user.name,
         avatar: user.avatar,
-        status: user.getStatus() === 'online' ? 'online' : 'offline'
+        status: user.getStatus() === 'online' ? 'online' : 'offline',
+        isTyping: false
       }));
       setUsers(convertedUsers);
       console.log('Users:', convertedUsers);
 
-    
       convertedUsers.forEach(user => {
         const unsubscribe = subscribeToUserStatus(user.uid, (status) => {
           setUsers(prevUsers => 
@@ -102,9 +134,9 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
         <Text style={styles.userName}>{item.name}</Text>
         <Text style={[
           styles.userStatus,
-          { color: item.status === 'online' ? '#25D366' : '#999' }
+          { color: item.isTyping ? '#25D366' : item.status === 'online' ? '#25D366' : '#999' }
         ]}>
-          {item.status === 'online' ? 'Online' : 'Offline'}
+          {item.isTyping ? 'typing...' : item.status === 'online' ? 'Online' : 'Offline'}
         </Text>
       </View>
     </TouchableOpacity>
