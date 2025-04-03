@@ -22,17 +22,23 @@ interface UserListProps {
 interface UserWithStatus extends User {
   status: 'online' | 'offline';
   isTyping?: boolean;
+  unreadCount: number;
 }
 
 const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
   const [users, setUsers] = useState<UserWithStatus[]>([]);
   const unsubscribeFunctions = React.useRef<{ [key: string]: () => void }>({});
+  const messageListenerRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     loadUsers();
     setupTypingListener();
+    setupMessageListener();
     return () => {
       Object.values(unsubscribeFunctions.current).forEach(unsubscribe => unsubscribe());
+      if (messageListenerRef.current) {
+        CometChat.removeMessageListener(messageListenerRef.current);
+      }
     };
   }, []);
 
@@ -65,6 +71,57 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
     };
   };
 
+  const setupMessageListener = () => {
+    messageListenerRef.current = 'user_list_message_listener';
+    CometChat.addMessageListener(
+      messageListenerRef.current,
+      new CometChat.MessageListener({
+        onTextMessageReceived: async (textMessage: CometChat.TextMessage) => {
+          const senderId = textMessage.getSender().getUid();
+          const receiver = textMessage.getReceiver() as CometChat.User;
+          const receiverId = receiver.getUid();
+          const loggedInUser = await CometChat.getLoggedinUser();
+
+          if (receiverId === loggedInUser?.getUid()) {
+            setUsers(prevUsers => 
+              prevUsers.map(user => 
+                user.uid === senderId 
+                  ? { ...user, unreadCount: user.unreadCount + 1 }
+                  : user
+              )
+            );
+          }
+        },
+        onMediaMessageReceived: async (mediaMessage: CometChat.MediaMessage) => {
+          const senderId = mediaMessage.getSender().getUid();
+          const receiver = mediaMessage.getReceiver() as CometChat.User;
+          const receiverId = receiver.getUid();
+          const loggedInUser = await CometChat.getLoggedinUser();
+
+          if (receiverId === loggedInUser?.getUid()) {
+            setUsers(prevUsers => 
+              prevUsers.map(user => 
+                user.uid === senderId 
+                  ? { ...user, unreadCount: user.unreadCount + 1 }
+                  : user
+              )
+            );
+          }
+        },
+        onMessagesRead: (messageReceipt: CometChat.MessageReceipt) => {
+          const senderId = messageReceipt.getSender().getUid();
+          setUsers(prevUsers => 
+            prevUsers.map(user => 
+              user.uid === senderId 
+                ? { ...user, unreadCount: 0 }
+                : user
+            )
+          );
+        }
+      })
+    );
+  };
+
   const loadUsers = async () => {
     try {
       const fetchedUsers = await fetchUsers();
@@ -74,7 +131,8 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
         name: user.name,
         avatar: user.avatar,
         status: user.getStatus() === 'online' ? 'online' : 'offline',
-        isTyping: false
+        isTyping: false,
+        unreadCount: 0
       }));
       setUsers(convertedUsers);
       console.log('Users:', convertedUsers);
@@ -104,10 +162,20 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
     }
   };
 
+  const handleUserSelect = (user: UserWithStatus) => {
+    // Reset unread count when user is selected
+    setUsers(prevUsers => 
+      prevUsers.map(u => 
+        u.uid === user.uid ? { ...u, unreadCount: 0 } : u
+      )
+    );
+    onUserSelect(user);
+  };
+
   const renderUser = ({ item }: { item: UserWithStatus }) => (
     <TouchableOpacity 
       style={styles.userItem}
-      onPress={() => onUserSelect(item)}
+      onPress={() => handleUserSelect(item)}
     >
       <View style={styles.userAvatar}>
         {item.avatar ? (
@@ -139,6 +207,11 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
           {item.isTyping ? 'typing...' : item.status === 'online' ? 'Online' : 'Offline'}
         </Text>
       </View>
+      {item.unreadCount > 0 && (
+        <View style={styles.unreadBadge}>
+          <Text style={styles.unreadCount}>{item.unreadCount}</Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 
@@ -252,6 +325,20 @@ const styles = StyleSheet.create({
   userStatus: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  unreadBadge: {
+    backgroundColor: '#25D366',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 'auto',
+  },
+  unreadCount: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 
