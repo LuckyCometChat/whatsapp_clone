@@ -665,28 +665,28 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             style={styles.attachmentOption}
             onPress={() => handleCameraPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="camera-outline" size={24} color="#075E54" />
+            {/* <Icon name="camera-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Camera</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
             onPress={() => handleGalleryPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="images-outline" size={24} color="#075E54" />
+            {/* <Icon name="images-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Gallery</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
             onPress={() => handleAudioPress(handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="musical-notes-outline" size={24} color="#075E54" />
+            {/* <Icon name="musical-notes-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Audio</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
             onPress={() => handleVideoPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="videocam-outline" size={24} color="#075E54" />
+            {/* <Icon name="videocam-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Video</Text>
           </TouchableOpacity>
         </View>
@@ -757,7 +757,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             style={styles.attachButton}
             onPress={handleAttachmentPress}
           >
-            <Icon name="add-circle-outline" size={24} color="#128C7E" />
+            {/* <Icon name="add-circle-outline" size={24} color="#128C7E" /> */}
+            <Text style={{ fontSize: 20, color: "#128C7E" }}>📎</Text>
           </TouchableOpacity>
           <TextInput
             style={styles.chatInput}
