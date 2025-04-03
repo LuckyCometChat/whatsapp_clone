@@ -12,11 +12,16 @@ import {
   StatusBar,
   Image,
   Alert,
-  Modal
+  Modal,
+  ActionSheetIOS,
+  PermissionsAndroid
 } from 'react-native';
-import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded } from '../services/cometChat';
+import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded, sendMediaMessage } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage, Reaction } from '../types/index';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
+import * as ImagePicker from 'react-native-image-picker';
+import DocumentPicker from 'react-native-document-picker';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 interface ChatProps {
   currentUser: User;
@@ -41,6 +46,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const [selectedMessageForReaction, setSelectedMessageForReaction] = useState<ChatMessage | null>(null);
   const reactionListenerRef = useRef<string | null>(null);
   const messageListenerRef = useRef<string | null>(null);
+  const [showAttachmentOptions, setShowAttachmentOptions] = useState(false);
+  const [mediaPreview, setMediaPreview] = useState<{ uri: string; type: string } | null>(null);
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
@@ -49,28 +56,46 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     action: CometChat.REACTION_ACTION
   ) => {
     try {
-      const reaction = reactionEvent.getReaction();
-      const messageId = reaction?.getMessageId();
+      if (!reactionEvent) {
+        console.error("Invalid reaction event: null or undefined");
+        return;
+      }
+      
+      console.log("Processing reaction event:", { action });
+      
+      const reaction = reactionEvent.getReaction?.();
+      if (!reaction) {
+        console.error("No reaction in event");
+        return;
+      }
+      
+      const messageId = reaction.getMessageId?.();
+      if (!messageId) {
+        console.error("No messageId in reaction");
+        return;
+      }
 
-      if (reaction && messageId) {
-        setMessages((prevMessages) => {
+      console.log("Processing reaction for message:", messageId.toString());
+
+      setMessages((prevMessages) => {
+        try {
           const updatedMessages = prevMessages.map((msg) => {
             if (msg.id === messageId.toString()) {
               try {
-                // Get the current reactions
                 const currentReactions = msg.reactions || [];
                 
-                // Create a new reaction object
+                const emojiReaction = reaction.getReaction?.() || '';
+                const reactedBy = reaction.getReactedBy?.() || '';
+                
                 const newReaction = {
-                  emoji: reaction.getReaction(),
-                  count: 1, // Default count for new reactions
-                  reactedByMe: reaction.getReactedBy() === currentUser.uid
+                  emoji: emojiReaction,
+                  count: 1, 
+                  reactedByMe: !!(reactedBy && currentUser.uid && 
+                    reactedBy.toString() === currentUser.uid.toString())
                 };
 
-                // Update reactions based on action
                 let updatedReactions;
                 if (action === CometChat.REACTION_ACTION.REACTION_ADDED) {
-                  // Add or update reaction
                   const existingIndex = currentReactions.findIndex(r => r.emoji === newReaction.emoji);
                   if (existingIndex >= 0) {
                     updatedReactions = [...currentReactions];
@@ -83,7 +108,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                     updatedReactions = [...currentReactions, newReaction];
                   }
                 } else {
-                  // Remove reaction
                   updatedReactions = currentReactions.map(r => {
                     if (r.emoji === newReaction.emoji) {
                       return {
@@ -109,8 +133,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           });
 
           return updatedMessages;
-        });
-      }
+        } catch (error) {
+          console.error("Error in message update function:", error);
+          return prevMessages;
+        }
+      });
     } catch (error) {
       console.error("Error processing reaction event:", error);
     }
@@ -262,6 +289,56 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           }
         },
 
+        onMediaMessageReceived: (mediaMessage: CometChat.MediaMessage) => {
+          const senderId = mediaMessage.getSender().getUid();
+          const receiver = mediaMessage.getReceiver() as CometChat.User;
+          const receiverId = receiver.getUid();
+
+          if (
+            (senderId === selectedUser.uid && receiverId === currentUser.uid) ||
+            (senderId === currentUser.uid && receiverId === selectedUser.uid)
+          ) {
+            const attachment = mediaMessage.getAttachment();
+            const convertedMessage: ChatMessage = {
+              id: mediaMessage.getId().toString(),
+              text: mediaMessage.getType() === CometChat.MESSAGE_TYPE.IMAGE ? 'Image' :
+                    mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO ? 'Video' :
+                    mediaMessage.getType() === CometChat.MESSAGE_TYPE.AUDIO ? 'Audio' : 'Media',
+              sender: {
+                uid: mediaMessage.getSender().getUid(),
+                name: mediaMessage.getSender().getName(),
+                avatar: mediaMessage.getSender().getAvatar()
+              },
+              sentAt: mediaMessage.getSentAt(),
+              type: mediaMessage.getType(),
+              status: 'sent',
+              reactions: [],
+              attachment: attachment ? {
+                url: attachment.getUrl(),
+                type: attachment.getMimeType(),
+                name: attachment.getName()
+              } : undefined
+            };
+            setMessages(prevMessages => [...prevMessages, convertedMessage]);
+          }
+
+          if (receiverId === currentUser.uid) {
+            CometChat.markAsDelivered(mediaMessage).then(() => {
+              setMessages(prevMessages =>
+                prevMessages.map(msg => {
+                  if (msg.id === mediaMessage.getId().toString()) {
+                    return {
+                      ...msg,
+                      status: 'seen'
+                    };
+                  }
+                  return msg;
+                })
+              );
+            });
+          }
+        },
+
         onMessagesDelivered: (messageReceipt: CometChat.MessageReceipt) => {
           const messageId = messageReceipt.getMessageId().toString();
           setMessages(prevMessages =>
@@ -308,57 +385,152 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       if (messageListenerRef.current) {
         CometChat.removeMessageListener(messageListenerRef.current);
       }
-      CometChat.removeMessageListener(reactionListenerRef.current);
     };
   }, [selectedUser, currentUser.uid, onUserStatusChange]);
 
   const loadMessages = async () => {
     try {
+      console.log("Fetching messages for user:", selectedUser.uid);
       const fetchedMessages = await fetchMessages(selectedUser.uid);
+      console.log("fetchedMessages:", fetchedMessages ? fetchedMessages.length : "null");
 
-      const convertedMessages: ChatMessage[] = (fetchedMessages as unknown as CometChat.BaseMessage[])
-        .filter(msg => (msg as any).getCategory?.() !== "action")
-        .map(msg => {
+      if (!fetchedMessages || !Array.isArray(fetchedMessages) || fetchedMessages.length === 0) {
+        console.log("No messages to process");
+        setMessages([]);
+        return;
+      }
+
+      const convertedMessages: ChatMessage[] = [];
+      
+      for (const msg of fetchedMessages as unknown as CometChat.BaseMessage[]) {
+        try {
+          console.log("Processing message:", msg?.getId?.());
+          
+          if (!msg || typeof msg !== 'object') {
+            console.log("Message is null or not an object");
+            continue;
+          }
+          
+          if ((msg as any).getCategory?.() === "action") {
+            console.log("Skipping action message");
+            continue;
+          }
+          
+          // Safely get sender
+          const sender = msg.getSender?.();
+          if (!sender || typeof sender !== 'object') {
+            console.log("Invalid sender:", sender);
+            continue;
+          }
+          
           const isDeleted = (msg as any).getDeletedAt?.() !== undefined;
           const editedAt = (msg as any).getEditedAt?.();
           const editedBy = (msg as any).getEditedBy?.();
           const readAt = (msg as any).getReadAt?.();
           const deliveredAt = (msg as any).getDeliveredAt?.();
           let status: 'sent' | 'delivered' | 'seen' = 'sent';
+          
           if (deliveredAt) {
             status = 'delivered';
           }
           if (readAt) {
             status = 'seen';
           }
+
+          // Handle different message types
+          let text = '';
+          let attachment = undefined;
+
+          if (msg.getType() === CometChat.MESSAGE_TYPE.TEXT) {
+            text = (msg as CometChat.TextMessage).getText?.() || '';
+          } else if (msg.getType() === CometChat.MESSAGE_TYPE.IMAGE) {
+            text = 'Image';
+            const mediaAttachment = (msg as CometChat.MediaMessage).getAttachment?.();
+            if (mediaAttachment) {
+              attachment = {
+                url: mediaAttachment.getUrl?.() || '',
+                type: mediaAttachment.getMimeType?.() || '',
+                name: 'image.jpg'
+              };
+            }
+          } else if (msg.getType() === CometChat.MESSAGE_TYPE.VIDEO) {
+            text = 'Video';
+            const mediaAttachment = (msg as CometChat.MediaMessage).getAttachment?.();
+            if (mediaAttachment) {
+              attachment = {
+                url: mediaAttachment.getUrl?.() || '',
+                type: mediaAttachment.getMimeType?.() || '',
+                name: 'video.mp4'
+              };
+            }
+          } else if (msg.getType() === CometChat.MESSAGE_TYPE.AUDIO) {
+            text = 'Audio';
+            const mediaAttachment = (msg as CometChat.MediaMessage).getAttachment?.();
+            if (mediaAttachment) {
+              attachment = {
+                url: mediaAttachment.getUrl?.() || '',
+                type: mediaAttachment.getMimeType?.() || '',
+                name: 'audio.mp3'
+              };
+            }
+          }
           
-          return {
+          // Process reactions safely
+          let reactions: any[] = [];
+          try {
+            if ((msg as any).getReactions && typeof (msg as any).getReactions === 'function') {
+              const rawReactions = (msg as any).getReactions() || [];
+              console.log("Raw reactions:", rawReactions);
+              if (Array.isArray(rawReactions)) {
+                reactions = rawReactions.map(reaction => {
+                  if (!reaction) return null;
+                  return {
+                    emoji: reaction.getReaction?.() || '',
+                    count: reaction.getCount?.() || 1,
+                    reactedByMe: reaction.getReactedByMe?.() || false
+                  };
+                }).filter(Boolean);
+              }
+            }
+          } catch (reactionError) {
+            console.error("Error processing reactions:", reactionError);
+            reactions = [];
+          }
+          
+          convertedMessages.push({
             id: msg.getId().toString(),
-            text: isDeleted ? "This message was deleted" : (msg as CometChat.TextMessage).getText(),
+            text: isDeleted ? "This message was deleted" : text,
             sender: {
-              uid: msg.getSender().getUid(),
-              name: msg.getSender().getName(),
-              avatar: msg.getSender().getAvatar()
+              uid: sender.getUid?.() || '',
+              name: sender.getName?.() || '',
+              avatar: sender.getAvatar?.() || ''
             },
-            sentAt: msg.getSentAt(),
-            type: msg.getType(),
+            sentAt: msg.getSentAt?.() || Date.now(),
+            type: msg.getType?.() || '',
             status: status,
             editedAt: editedAt,
             editedBy: editedBy,
-            reactions: (msg as any).getReactions?.()?.map((reaction: any) => ({
-              emoji: reaction.getReaction(),
-              count: reaction.getCount(),
-              reactedByMe: reaction.getReactedByMe()
-            })) || []
-          };
-        });
+            attachment: attachment,
+            reactions: reactions
+          });
+        } catch (msgError) {
+          console.error("Error processing individual message:", msgError);
+        }
+      }
 
+      console.log("Converted messages:", convertedMessages.length);
       const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
       setMessages(sortedMessages);
 
-      if (convertedMessages.length > 0) {
+      if (convertedMessages.length > 0 && fetchedMessages && Array.isArray(fetchedMessages) && fetchedMessages.length > 0) {
         const lastMessage = fetchedMessages[fetchedMessages.length - 1];
-        await CometChat.markAsDelivered(lastMessage);
+        if (lastMessage && typeof lastMessage === 'object' && typeof CometChat.markAsDelivered === 'function') {
+          try {
+            await CometChat.markAsDelivered(lastMessage);
+          } catch (err) {
+            console.error("Error marking message as delivered:", err);
+          }
+        }
       }
     } catch (error) {
       console.error("Error loading messages:", error);
@@ -372,29 +544,61 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       await typeMessageEnded(selectedUser.uid);
       
       const sentMessage = await sendMessage(selectedUser.uid, newMessage);
+      console.log("Sent message:", sentMessage);
+      
+      if (!sentMessage) {
+        console.error("No message returned from sendMessage");
+        return;
+      }
+      
       const cometChatMessage = sentMessage as unknown as CometChatMessage;
+      
+      if (!cometChatMessage || !cometChatMessage.sender) {
+        console.error("Invalid message format received:", cometChatMessage);
+        return;
+      }
+      
+      // Process reactions safely
+      let reactions: any[] = [];
+      try {
+        if ((cometChatMessage as any).getReactions && typeof (cometChatMessage as any).getReactions === 'function') {
+          const rawReactions = (cometChatMessage as any).getReactions() || [];
+          if (Array.isArray(rawReactions)) {
+            reactions = rawReactions.map(reaction => {
+              if (!reaction) return null;
+              return {
+                emoji: reaction.getReaction?.() || '',
+                count: reaction.getCount?.() || 1,
+                reactedByMe: reaction.getReactedByMe?.() || false
+              };
+            }).filter(Boolean);
+          }
+        }
+      } catch (reactionError) {
+        console.error("Error processing reactions:", reactionError);
+        reactions = [];
+      }
+      
       const convertedMessage: ChatMessage = {
-        id: cometChatMessage.id,
-        text: cometChatMessage.text,
+        id: cometChatMessage.id || '',
+        text: cometChatMessage.text || '',
         sender: {
-          uid: cometChatMessage.sender.uid,
-          name: cometChatMessage.sender.name,
-          avatar: cometChatMessage.sender.avatar
+          uid: cometChatMessage.sender?.uid || '',
+          name: cometChatMessage.sender?.name || '',
+          avatar: cometChatMessage.sender?.avatar || ''
         },
-        sentAt: cometChatMessage.sentAt,
-        type: cometChatMessage.type,
+        sentAt: cometChatMessage.sentAt || Date.now(),
+        type: cometChatMessage.type || '',
         status: 'sent',
-        reactions: (cometChatMessage as any).getReactions?.()?.map((reaction: any) => ({
-          emoji: reaction.getReaction(),
-          count: reaction.getCount(),
-          reactedByMe: reaction.getReactedByMe()
-        })) || []
+        reactions: reactions
       };
+      
       setMessages(prevMessages => [...prevMessages, convertedMessage]);
       setNewMessage('');
       flatListRef.current?.scrollToEnd({ animated: true });
     } catch (error) {
       console.error("Error sending message:", error);
+      Alert.alert("Error", "Failed to send message. Please try again.");
     }
   };
 
@@ -469,7 +673,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       const editedMessage = await EditMessage(editingMessage.id, editText);
       setMessages(prevMessages => 
         prevMessages.map(msg => 
-          msg.id === editingMessage.id ? editedMessage : msg
+          msg.id === editingMessage.id ? (editedMessage as ChatMessage) : msg
         )
       );
       setEditingMessage(null);
@@ -588,7 +792,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             const existingIndex = currentReactions.findIndex(r => r.emoji === emoji);
             
             if (existingIndex >= 0) {
-              // Update existing reaction
               const updatedReactions = [...currentReactions];
               updatedReactions[existingIndex] = {
                 ...updatedReactions[existingIndex],
@@ -714,12 +917,236 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     </Modal>
   );
 
+  const requestCameraPermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: "Camera Permission",
+            message: "This app needs access to your camera to take photos.",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn(err);
+        return false;
+      }
+    }
+    return true; // iOS handles permissions through the image picker
+  };
+
+  const requestStoragePermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+          {
+            title: "Storage Permission",
+            message: "This app needs access to your storage to select media.",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn(err);
+        return false;
+      }
+    }
+    return true; // iOS handles permissions through the image picker
+  };
+
+  const handleAttachmentPress = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Choose from Library', 'Share Audio', 'Share Video'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) {
+            handleCameraPress();
+          } else if (buttonIndex === 2) {
+            handleGalleryPress();
+          } else if (buttonIndex === 3) {
+            handleAudioPress();
+          } else if (buttonIndex === 4) {
+            handleVideoPress();
+          }
+        }
+      );
+    } else {
+      setShowAttachmentOptions(!showAttachmentOptions);
+    }
+  };
+
+  const handleCameraPress = async () => {
+    const hasPermission = await requestCameraPermission();
+    if (!hasPermission) {
+      Alert.alert('Permission Denied', 'Cannot access camera');
+      return;
+    }
+
+    const options: ImagePicker.CameraOptions = {
+      mediaType: 'photo',
+      includeBase64: false,
+      saveToPhotos: true,
+      quality: 0.8,
+    };
+
+    ImagePicker.launchCamera(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled camera');
+      } else if (response.errorCode) {
+        console.log('Camera Error: ', response.errorMessage);
+      } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
+        const uri = response.assets[0].uri;
+        const type = response.assets[0].type || 'image/jpeg';
+        setMediaPreview({ uri, type });
+        handleSendMediaMessage(uri, type, 'image');
+        setShowAttachmentOptions(false);
+      }
+    });
+  };
+
+  const handleGalleryPress = async () => {
+    const hasPermission = await requestStoragePermission();
+    if (!hasPermission) {
+      Alert.alert('Permission Denied', 'Cannot access photos');
+      return;
+    }
+
+    const options: ImagePicker.ImageLibraryOptions = {
+      mediaType: 'photo',
+      includeBase64: false,
+      quality: 0.8,
+    };
+
+    ImagePicker.launchImageLibrary(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled gallery');
+      } else if (response.errorCode) {
+        console.log('Gallery Error: ', response.errorMessage);
+      } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
+        const uri = response.assets[0].uri;
+        const type = response.assets[0].type || 'image/jpeg';
+        setMediaPreview({ uri, type });
+        handleSendMediaMessage(uri, type, 'image');
+        setShowAttachmentOptions(false);
+      }
+    });
+  };
+
+  const handleAudioPress = async () => {
+    const hasPermission = await requestStoragePermission();
+    if (!hasPermission) {
+      Alert.alert('Permission Denied', 'Cannot access files');
+      return;
+    }
+
+    try {
+      const result = await DocumentPicker.pick({
+        type: [DocumentPicker.types.audio],
+      });
+      
+      const file = result[0];
+      handleSendMediaMessage(file.uri, file.type || 'audio/mpeg', 'audio');
+      setShowAttachmentOptions(false);
+    } catch (err) {
+      if (DocumentPicker.isCancel(err)) {
+        console.log('User cancelled document picker');
+      } else {
+        console.error('Error selecting audio:', err);
+      }
+    }
+  };
+
+  const handleVideoPress = async () => {
+    const hasPermission = await requestStoragePermission();
+    if (!hasPermission) {
+      Alert.alert('Permission Denied', 'Cannot access videos');
+      return;
+    }
+
+    const options: ImagePicker.ImageLibraryOptions = {
+      mediaType: 'video',
+      includeBase64: false,
+      quality: 0.8,
+    };
+
+    ImagePicker.launchImageLibrary(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled video selection');
+      } else if (response.errorCode) {
+        console.log('Video Selection Error: ', response.errorMessage);
+      } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
+        const uri = response.assets[0].uri;
+        const type = response.assets[0].type || 'video/mp4';
+        setMediaPreview({ uri, type });
+        handleSendMediaMessage(uri, type, 'video');
+        setShowAttachmentOptions(false);
+      }
+    });
+  };
+
+  const handleSendMediaMessage = async (uri: string, type: string, mediaCategory: 'image' | 'video' | 'audio') => {
+    try {
+      // Extract filename from uri
+      const uriParts = uri.split('/');
+      const fileName = uriParts[uriParts.length - 1];
+      
+      let messageType: typeof CometChat.MESSAGE_TYPE.IMAGE | 
+                        typeof CometChat.MESSAGE_TYPE.VIDEO | 
+                        typeof CometChat.MESSAGE_TYPE.AUDIO;
+                        
+      switch (mediaCategory) {
+        case 'image':
+          messageType = CometChat.MESSAGE_TYPE.IMAGE;
+          break;
+        case 'video':
+          messageType = CometChat.MESSAGE_TYPE.VIDEO;
+          break;
+        case 'audio':
+          messageType = CometChat.MESSAGE_TYPE.AUDIO;
+          break;
+        default:
+          messageType = CometChat.MESSAGE_TYPE.IMAGE;
+      }
+      
+      const mediaFile = {
+        uri,
+        type,
+        name: fileName
+      };
+      
+      const sentMessage = await sendMediaMessage(selectedUser.uid, mediaFile, messageType);
+      setMessages(prevMessages => [...prevMessages, sentMessage as ChatMessage]);
+      flatListRef.current?.scrollToEnd({ animated: true });
+      
+      // Clear the media preview
+      setMediaPreview(null);
+    } catch (error) {
+      console.error("Error sending media message:", error);
+      Alert.alert("Error", "Failed to send media message. Please try again.");
+    }
+  };
+
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
     const isSentByMe = item.sender.uid === currentUser.uid;
     const messageTime = formatMessageTime(item.sentAt);
     const isEditing = editingMessage?.id === item.id;
     const isDeleted = item.text === "This message was deleted";
     const isEdited = item.editedAt !== undefined;
+    const isMediaMessage = item.type === CometChat.MESSAGE_TYPE.IMAGE || 
+                          item.type === CometChat.MESSAGE_TYPE.VIDEO || 
+                          item.type === CometChat.MESSAGE_TYPE.AUDIO;
   
     const showDateHeading =
       index === 0 ||
@@ -784,17 +1211,43 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
               </View>
             ) : (
               <>
-                <Text style={[
-                  styles.messageText,
-                  isDeleted && styles.deletedMessageText
-                ]}>{item.text}</Text>
+                {isMediaMessage ? (
+                  <View style={styles.mediaContainer}>
+                    {item.type === CometChat.MESSAGE_TYPE.IMAGE && item.attachment?.url && (
+                      <Image 
+                        source={{ uri: item.attachment.url }} 
+                        style={styles.imageMessage}
+                        resizeMode="cover"
+                      />
+                    )}
+                    {item.type === CometChat.MESSAGE_TYPE.VIDEO && item.attachment?.url && (
+                      <View style={styles.videoContainer}>
+                        <View style={styles.videoPlaceholder}>
+                          <Icon name="videocam" size={40} color="#075E54" />
+                        </View>
+                        <Icon name="play-circle" size={30} color="#075E54" style={styles.playButton} />
+                      </View>
+                    )}
+                    {item.type === CometChat.MESSAGE_TYPE.AUDIO && item.attachment?.url && (
+                      <View style={styles.audioContainer}>
+                        <Icon name="musical-note" size={24} color="#075E54" />
+                        <Text style={styles.audioText}>Audio Message</Text>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <Text style={[
+                    styles.messageText,
+                    isDeleted && styles.deletedMessageText
+                  ]}>{item.text}</Text>
+                )}
                 {!isDeleted && (
                   <View style={styles.messageFooter}>
                     <Text style={styles.messageTime}>{messageTime}</Text>
                     {isSentByMe && (
-                      <Text style={styles.messageStatus}>
-                        {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
-                      </Text>
+                     <Text style={{ color: item.status === 'seen'  ? '#34B7F1' : '#666' }}>
+                     {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
+                   </Text>
                     )}
                     {isEdited && (
                       <Text style={styles.editedText}>edited</Text>
@@ -881,6 +1334,52 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     }
   };
 
+  const renderAttachmentOptions = () => (
+    <Modal
+      visible={showAttachmentOptions}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowAttachmentOptions(false)}
+    >
+      <TouchableOpacity 
+        style={styles.attachmentOverlay}
+        activeOpacity={1}
+        onPress={() => setShowAttachmentOptions(false)}
+      >
+        <View style={styles.attachmentContainer}>
+          <TouchableOpacity 
+            style={styles.attachmentOption}
+            onPress={handleCameraPress}
+          >
+            <Icon name="camera" size={24} color="#075E54" />
+            <Text style={styles.attachmentText}>Camera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.attachmentOption}
+            onPress={handleGalleryPress}
+          >
+            <Icon name="image" size={24} color="#075E54" />
+            <Text style={styles.attachmentText}>Gallery</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.attachmentOption}
+            onPress={handleAudioPress}
+          >
+            <Icon name="musical-note" size={24} color="#075E54" />
+            <Text style={styles.attachmentText}>Audio</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.attachmentOption}
+            onPress={handleVideoPress}
+          >
+            <Icon name="videocam" size={24} color="#075E54" />
+            <Text style={styles.attachmentText}>Video</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar backgroundColor={styles.header.backgroundColor} barStyle="light-content" />
@@ -933,11 +1432,19 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         inverted={false}
       />
       {renderMessageOptions()}
+      {renderAttachmentOptions()}
+      {renderReactionPicker()}
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
       >
         <View style={styles.inputContainer}>
+          <TouchableOpacity 
+            style={styles.attachButton}
+            onPress={handleAttachmentPress}
+          >
+            <Icon name="attach" size={24} color="#128C7E" />
+          </TouchableOpacity>
           <TextInput
             style={styles.chatInput}
             value={newMessage}
@@ -959,7 +1466,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-      {renderReactionPicker()}
     </SafeAreaView>
   );
 };
@@ -1322,6 +1828,81 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#075E54',
+  },
+  attachButton: {
+    padding: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  attachmentOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  attachmentContainer: {
+    backgroundColor: 'white',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  attachmentOption: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  attachmentText: {
+    marginTop: 5,
+    color: '#075E54',
+    fontSize: 12,
+  },
+  mediaContainer: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 5,
+  },
+  imageMessage: {
+    width: 200,
+    height: 200,
+    borderRadius: 8,
+  },
+  videoContainer: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  videoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+  },
+  videoThumbnail: {
+    width: '100%',
+    height: '100%',
+    opacity: 0.7,
+  },
+  playButton: {
+    position: 'absolute',
+  },
+  audioContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+  },
+  audioText: {
+    marginLeft: 10,
+    color: '#075E54',
+    fontSize: 14,
   },
 });
 
