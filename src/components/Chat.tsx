@@ -201,19 +201,13 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           }
 
           if (receiverId === currentUser.uid) {
-            CometChat.markAsDelivered(textMessage).then(() => {
-              setMessages(prevMessages =>
-                prevMessages.map(msg => {
-                  if (msg.id === textMessage.getId().toString()) {
-                    return {
-                      ...msg,
-                      status: 'seen'
-                    };
-                  }
-                  return msg;
-                })
-              );
-            });
+            // First mark as delivered (will show double gray check)
+            CometChat.markAsDelivered(textMessage);
+
+            // Then mark as read (will show double blue check) - with a small delay
+            setTimeout(() => {
+              CometChat.markAsRead(textMessage);
+            }, 500);
           }
         },
 
@@ -269,19 +263,13 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           }
 
           if (receiverId === currentUser.uid) {
-            CometChat.markAsDelivered(mediaMessage).then(() => {
-              setMessages(prevMessages =>
-                prevMessages.map(msg => {
-                  if (msg.id === mediaMessage.getId().toString()) {
-                    return {
-                      ...msg,
-                      status: 'seen'
-                    };
-                  }
-                  return msg;
-                })
-              );
-            });
+            // First mark as delivered (will show double gray check)
+            CometChat.markAsDelivered(mediaMessage);
+
+            // Then mark as read (will show double blue check) - with a small delay
+            setTimeout(() => {
+              CometChat.markAsRead(mediaMessage);
+            }, 500);
           }
         },
 
@@ -531,9 +519,17 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                   <View style={styles.messageFooter}>
                     <Text style={styles.messageTime}>{messageTime}</Text>
                     {isSentByMe && (
-                      <Text style={{ color: item.status === 'seen' ? '#34B7F1' : '#666' }}>
-                        {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
-                      </Text>
+                      <View style={styles.messageStatusContainer}>
+                        {item.status === 'seen' && (
+                          <Text style={styles.messageStatusSeen}>✓✓</Text>
+                        )}
+                        {item.status === 'delivered' && (
+                          <Text style={styles.messageStatusDelivered}>✓✓</Text>
+                        )}
+                        {item.status === 'sent' && (
+                          <Text style={styles.messageStatusSent}>✓</Text>
+                        )}
+                      </View>
                     )}
                     {isEdited && (
                       <Text style={styles.editedText}>edited</Text>
@@ -981,120 +977,22 @@ const styles = StyleSheet.create({
     color: '#666',
     marginRight: 4,
   },
-  messageStatus: {
-    fontSize: 12,
-    color: '#666',
-    letterSpacing: -1,
-  },
-  inputContainer: {
+  messageStatusContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: 10,
-    backgroundColor: '#f0f0f0',
-    borderTopWidth: 1,
-    borderTopColor: '#ddd',
-    marginRight: Platform.OS === "android" ? 10 : 0,
-    marginLeft: Platform.OS === "android" ? 10 : 0,
-    marginBottom: Platform.OS === "android" ? 20 : 0,
-  },
-  chatInput: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
-    backgroundColor: 'white',
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    fontSize: 16,
-  },
-  sendButton: {
-    backgroundColor: '#25D366',
-    justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    height: 40,
+    marginLeft: 4,
   },
-  sendButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+  messageStatusSeen: {
+    color: '#34B7F1',
+    fontSize: 12,
   },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#25D366',
-    borderWidth: 2,
-    borderColor: '#f0f0f0',
-  },
-  editContainer: {
-    width: '100%',
-  },
-  editInput: {
-    color: 'black',
-    fontSize: 16,
-    padding: 0,
-    marginBottom: 8,
-  },
-  editActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  editButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
-    backgroundColor: '#E0E0E0',
-  },
-  saveButton: {
-    backgroundColor: '#25D366',
-  },
-  editButtonText: {
-    color: '#075E54',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  messageOptions: {
-    position: 'absolute',
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 8,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 1000,
-  },
-  optionButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  optionText: {
-    fontSize: 16,
-    color: '#075E54',
-  },
-  deleteOption: {
-    color: '#FF3B30',
-  },
-  deletedMessage: {
-    backgroundColor: '#f0f0f0',
-    opacity: 0.7,
-  },
-  deletedMessageText: {
+  messageStatusDelivered: {
     color: '#666',
-    fontStyle: 'italic',
+    fontSize: 12,
+  },
+  messageStatusSent: {
+    color: '#666',
+    fontSize: 12,
   },
   editedText: {
     fontSize: 12,
@@ -1271,6 +1169,116 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     textAlign: 'center',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+    marginRight: Platform.OS === "android" ? 10 : 0,
+    marginLeft: Platform.OS === "android" ? 10 : 0,
+    marginBottom: Platform.OS === "android" ? 20 : 0,
+  },
+  chatInput: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 100,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    fontSize: 16,
+  },
+  sendButton: {
+    backgroundColor: '#25D366',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    height: 40,
+  },
+  sendButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#25D366',
+    borderWidth: 2,
+    borderColor: '#f0f0f0',
+  },
+  editContainer: {
+    width: '100%',
+  },
+  editInput: {
+    color: 'black',
+    fontSize: 16,
+    padding: 0,
+    marginBottom: 8,
+  },
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  editButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    backgroundColor: '#E0E0E0',
+  },
+  saveButton: {
+    backgroundColor: '#25D366',
+  },
+  editButtonText: {
+    color: '#075E54',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  messageOptions: {
+    position: 'absolute',
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 8,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 1000,
+  },
+  optionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#075E54',
+  },
+  deleteOption: {
+    color: '#FF3B30',
+  },
+  deletedMessage: {
+    backgroundColor: '#f0f0f0',
+    opacity: 0.7,
+  },
+  deletedMessageText: {
+    color: '#666',
+    fontStyle: 'italic',
   },
 });
 
