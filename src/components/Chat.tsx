@@ -22,6 +22,23 @@ import { CometChat } from '@cometchat/chat-sdk-react-native';
 import * as ImagePicker from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { 
+  updateReactions,
+  loadMessages,
+  handleSendMessage,
+  handleEditMessage,
+  handleDeleteMessage,
+  handleAddReaction,
+  handleRemoveReaction,
+  handleCameraPress,
+  handleGalleryPress,
+  handleAudioPress,
+  handleVideoPress,
+  handleSendMediaMessage,
+  formatMessageTime,
+  formatDateHeading,
+  markMessagesAsRead
+} from './ChatUtils';
 
 interface ChatProps {
   currentUser: User;
@@ -51,100 +68,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
-  const updateReactions = async (
-    reactionEvent: CometChat.ReactionEvent,
-    action: CometChat.REACTION_ACTION
-  ) => {
-    try {
-      if (!reactionEvent) {
-        console.error("Invalid reaction event: null or undefined");
-        return;
-      }
-      
-      console.log("Processing reaction event:", { action });
-      
-      const reaction = reactionEvent.getReaction?.();
-      if (!reaction) {
-        console.error("No reaction in event");
-        return;
-      }
-      
-      const messageId = reaction.getMessageId?.();
-      if (!messageId) {
-        console.error("No messageId in reaction");
-        return;
-      }
-
-      console.log("Processing reaction for message:", messageId.toString());
-
-      setMessages((prevMessages) => {
-        try {
-          const updatedMessages = prevMessages.map((msg) => {
-            if (msg.id === messageId.toString()) {
-              try {
-                const currentReactions = msg.reactions || [];
-                
-                const emojiReaction = reaction.getReaction?.() || '';
-                const reactedBy = reaction.getReactedBy?.() || '';
-                
-                const newReaction = {
-                  emoji: emojiReaction,
-                  count: 1, 
-                  reactedByMe: !!(reactedBy && currentUser.uid && 
-                    reactedBy.toString() === currentUser.uid.toString())
-                };
-
-                let updatedReactions;
-                if (action === CometChat.REACTION_ACTION.REACTION_ADDED) {
-                  const existingIndex = currentReactions.findIndex(r => r.emoji === newReaction.emoji);
-                  if (existingIndex >= 0) {
-                    updatedReactions = [...currentReactions];
-                    updatedReactions[existingIndex] = {
-                      ...updatedReactions[existingIndex],
-                      count: updatedReactions[existingIndex].count + 1,
-                      reactedByMe: true
-                    };
-                  } else {
-                    updatedReactions = [...currentReactions, newReaction];
-                  }
-                } else {
-                  updatedReactions = currentReactions.map(r => {
-                    if (r.emoji === newReaction.emoji) {
-                      return {
-                        ...r,
-                        count: Math.max(0, r.count - 1),
-                        reactedByMe: false
-                      };
-                    }
-                    return r;
-                  }).filter(r => r.count > 0);
-                }
-
-                return {
-                  ...msg,
-                  reactions: updatedReactions
-                };
-              } catch (error) {
-                console.error("Error updating message reactions:", error);
-                return msg;
-              }
-            }
-            return msg;
-          });
-
-          return updatedMessages;
-        } catch (error) {
-          console.error("Error in message update function:", error);
-          return prevMessages;
-        }
-      });
-    } catch (error) {
-      console.error("Error processing reaction event:", error);
-    }
-  };
-
   useEffect(() => {
-    loadMessages();
+    loadMessages(selectedUser, currentUser, setMessages);
     unsubscribeRef.current = subscribeToUserStatus(selectedUser.uid, (status) => {
       if (selectedUser.uid === selectedUser.uid) {
         const updatedStatus = status === 'online' ? 'online' : 'offline';
@@ -232,11 +157,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       new CometChat.MessageListener({
         onMessageReactionAdded: (reactionEvent: CometChat.ReactionEvent) => {
           console.log("Reaction added:", reactionEvent.getReaction());
-          updateReactions(reactionEvent, CometChat.REACTION_ACTION.REACTION_ADDED);
+          updateReactions(reactionEvent, CometChat.REACTION_ACTION.REACTION_ADDED, currentUser, setMessages);
         },
         onMessageReactionRemoved: (reactionEvent: CometChat.ReactionEvent) => {
           console.log("Reaction removed:", reactionEvent.getReaction());
-          updateReactions(reactionEvent, CometChat.REACTION_ACTION.REACTION_REMOVED);
+          updateReactions(reactionEvent, CometChat.REACTION_ACTION.REACTION_REMOVED, currentUser, setMessages);
         }
       })
     );
@@ -388,220 +313,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     };
   }, [selectedUser, currentUser.uid, onUserStatusChange]);
 
-  const loadMessages = async () => {
-    try {
-      console.log("Fetching messages for user:", selectedUser.uid);
-      const fetchedMessages = await fetchMessages(selectedUser.uid);
-      console.log("fetchedMessages:", fetchedMessages ? fetchedMessages.length : "null");
-
-      if (!fetchedMessages || !Array.isArray(fetchedMessages) || fetchedMessages.length === 0) {
-        console.log("No messages to process");
-        setMessages([]);
-        return;
-      }
-
-      const convertedMessages: ChatMessage[] = [];
-      
-      for (const msg of fetchedMessages as unknown as CometChat.BaseMessage[]) {
-        try {
-          console.log("Processing message:", msg?.getId?.());
-          
-          if (!msg || typeof msg !== 'object') {
-            console.log("Message is null or not an object");
-            continue;
-          }
-          
-          if ((msg as any).getCategory?.() === "action") {
-            console.log("Skipping action message");
-            continue;
-          }
-          
-          // Safely get sender
-          const sender = msg.getSender?.();
-          if (!sender || typeof sender !== 'object') {
-            console.log("Invalid sender:", sender);
-            continue;
-          }
-          
-          const isDeleted = (msg as any).getDeletedAt?.() !== undefined;
-          const editedAt = (msg as any).getEditedAt?.();
-          const editedBy = (msg as any).getEditedBy?.();
-          const readAt = (msg as any).getReadAt?.();
-          const deliveredAt = (msg as any).getDeliveredAt?.();
-          let status: 'sent' | 'delivered' | 'seen' = 'sent';
-          
-          if (deliveredAt) {
-            status = 'delivered';
-          }
-          if (readAt) {
-            status = 'seen';
-          }
-
-          // Handle different message types
-          let text = '';
-          let attachment = undefined;
-
-          if (msg.getType() === CometChat.MESSAGE_TYPE.TEXT) {
-            text = (msg as CometChat.TextMessage).getText?.() || '';
-          } else if (msg.getType() === CometChat.MESSAGE_TYPE.IMAGE) {
-            text = 'Image';
-            const mediaAttachment = (msg as CometChat.MediaMessage).getAttachment?.();
-            if (mediaAttachment) {
-              attachment = {
-                url: mediaAttachment.getUrl?.() || '',
-                type: mediaAttachment.getMimeType?.() || '',
-                name: 'image.jpg'
-              };
-            }
-          } else if (msg.getType() === CometChat.MESSAGE_TYPE.VIDEO) {
-            text = 'Video';
-            const mediaAttachment = (msg as CometChat.MediaMessage).getAttachment?.();
-            if (mediaAttachment) {
-              attachment = {
-                url: mediaAttachment.getUrl?.() || '',
-                type: mediaAttachment.getMimeType?.() || '',
-                name: 'video.mp4'
-              };
-            }
-          } else if (msg.getType() === CometChat.MESSAGE_TYPE.AUDIO) {
-            text = 'Audio';
-            const mediaAttachment = (msg as CometChat.MediaMessage).getAttachment?.();
-            if (mediaAttachment) {
-              attachment = {
-                url: mediaAttachment.getUrl?.() || '',
-                type: mediaAttachment.getMimeType?.() || '',
-                name: 'audio.mp3'
-              };
-            }
-          }
-          
-          // Process reactions safely
-          let reactions: any[] = [];
-          try {
-            if ((msg as any).getReactions && typeof (msg as any).getReactions === 'function') {
-              const rawReactions = (msg as any).getReactions() || [];
-              console.log("Raw reactions:", rawReactions);
-              if (Array.isArray(rawReactions)) {
-                reactions = rawReactions.map(reaction => {
-                  if (!reaction) return null;
-                  return {
-                    emoji: reaction.getReaction?.() || '',
-                    count: reaction.getCount?.() || 1,
-                    reactedByMe: reaction.getReactedByMe?.() || false
-                  };
-                }).filter(Boolean);
-              }
-            }
-          } catch (reactionError) {
-            console.error("Error processing reactions:", reactionError);
-            reactions = [];
-          }
-          
-          convertedMessages.push({
-            id: msg.getId().toString(),
-            text: isDeleted ? "This message was deleted" : text,
-            sender: {
-              uid: sender.getUid?.() || '',
-              name: sender.getName?.() || '',
-              avatar: sender.getAvatar?.() || ''
-            },
-            sentAt: msg.getSentAt?.() || Date.now(),
-            type: msg.getType?.() || '',
-            status: status,
-            editedAt: editedAt,
-            editedBy: editedBy,
-            attachment: attachment,
-            reactions: reactions
-          });
-        } catch (msgError) {
-          console.error("Error processing individual message:", msgError);
-        }
-      }
-
-      console.log("Converted messages:", convertedMessages.length);
-      const sortedMessages = convertedMessages.sort((a, b) => a.sentAt - b.sentAt);
-      setMessages(sortedMessages);
-
-      if (convertedMessages.length > 0 && fetchedMessages && Array.isArray(fetchedMessages) && fetchedMessages.length > 0) {
-        const lastMessage = fetchedMessages[fetchedMessages.length - 1];
-        if (lastMessage && typeof lastMessage === 'object' && typeof CometChat.markAsDelivered === 'function') {
-          try {
-            await CometChat.markAsDelivered(lastMessage);
-          } catch (err) {
-            console.error("Error marking message as delivered:", err);
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error loading messages:", error);
-    }
-  };
-
-  const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
-
-    try {
-      await typeMessageEnded(selectedUser.uid);
-      
-      const sentMessage = await sendMessage(selectedUser.uid, newMessage);
-      console.log("Sent message:", sentMessage);
-      
-      if (!sentMessage) {
-        console.error("No message returned from sendMessage");
-        return;
-      }
-      
-      const cometChatMessage = sentMessage as unknown as CometChatMessage;
-      
-      if (!cometChatMessage || !cometChatMessage.sender) {
-        console.error("Invalid message format received:", cometChatMessage);
-        return;
-      }
-      
-      // Process reactions safely
-      let reactions: any[] = [];
-      try {
-        if ((cometChatMessage as any).getReactions && typeof (cometChatMessage as any).getReactions === 'function') {
-          const rawReactions = (cometChatMessage as any).getReactions() || [];
-          if (Array.isArray(rawReactions)) {
-            reactions = rawReactions.map(reaction => {
-              if (!reaction) return null;
-              return {
-                emoji: reaction.getReaction?.() || '',
-                count: reaction.getCount?.() || 1,
-                reactedByMe: reaction.getReactedByMe?.() || false
-              };
-            }).filter(Boolean);
-          }
-        }
-      } catch (reactionError) {
-        console.error("Error processing reactions:", reactionError);
-        reactions = [];
-      }
-      
-      const convertedMessage: ChatMessage = {
-        id: cometChatMessage.id || '',
-        text: cometChatMessage.text || '',
-        sender: {
-          uid: cometChatMessage.sender?.uid || '',
-          name: cometChatMessage.sender?.name || '',
-          avatar: cometChatMessage.sender?.avatar || ''
-        },
-        sentAt: cometChatMessage.sentAt || Date.now(),
-        type: cometChatMessage.type || '',
-        status: 'sent',
-        reactions: reactions
-      };
-      
-      setMessages(prevMessages => [...prevMessages, convertedMessage]);
-      setNewMessage('');
-      flatListRef.current?.scrollToEnd({ animated: true });
-    } catch (error) {
-      console.error("Error sending message:", error);
-      Alert.alert("Error", "Failed to send message. Please try again.");
-    }
-  };
-
   const handleLongPress = (message: ChatMessage, event: any) => {
     const { pageX, pageY } = event.nativeEvent;
     setMessageOptionsPosition({ x: pageX, y: pageY });
@@ -609,358 +320,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     setShowMessageOptions(true);
   };
 
-  const handleEditMessage = async () => {
-    if (!selectedMessage) return;
-    try {
-      setEditingMessage(selectedMessage);
-      setEditText(selectedMessage.text);
-      setShowMessageOptions(false);
-      console.log("Editing message:", selectedMessage);
-    } catch (error) {
-      console.error("Error preparing edit:", error);
-      Alert.alert(
-        "Error",
-        "Failed to prepare message for editing. Please try again.",
-        [{ text: "OK" }]
-      );
-    }
-  };
-
-  const handleDeleteMessage = async () => {
-    if (!selectedMessage) return;
-    
-    Alert.alert(
-      "Delete Message",
-      "Are you sure you want to delete this message?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteMessage(selectedMessage.id);
-              setMessages(prevMessages => 
-                prevMessages.map(msg => 
-                  msg.id === selectedMessage.id 
-                    ? { ...msg, text: "This message was deleted" }
-                    : msg
-                )
-              );
-              setShowMessageOptions(false);
-              Alert.alert("Success", "Message deleted successfully");
-            } catch (error: any) {
-              console.error("Error deleting message:", error);
-              Alert.alert(
-                "Error",
-                error.message || "Failed to delete message. Please try again.",
-                [{ text: "OK" }]
-              );
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleEditSubmit = async () => {
-    if (!editingMessage || !editText.trim()) return;
-
-    try {
-      const editedMessage = await EditMessage(editingMessage.id, editText);
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === editingMessage.id ? (editedMessage as ChatMessage) : msg
-        )
-      );
-      setEditingMessage(null);
-      setEditText('');
-      Alert.alert("Success", "Message edited successfully");
-    } catch (error: any) {
-      console.error("Error editing message:", error);
-      Alert.alert(
-        "Error",
-        error.message || "Failed to edit message. Please try again.",
-        [{ text: "OK" }]
-      );
-    }
-  };
-
   const cancelEdit = () => {
     setEditingMessage(null);
     setEditText('');
-  };
-
-  const formatMessageTime = (timestamp: number) => {
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
-
-  const formatDateHeading = (timestamp: number) => {
-    const messageDate = new Date(timestamp * 1000);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-  
-    if (
-      messageDate.getDate() === today.getDate() &&
-      messageDate.getMonth() === today.getMonth() &&
-      messageDate.getFullYear() === today.getFullYear()
-    ) {
-      return "Today";
-    } else if (
-      messageDate.getDate() === yesterday.getDate() &&
-      messageDate.getMonth() === yesterday.getMonth() &&
-      messageDate.getFullYear() === yesterday.getFullYear()
-    ) {
-      return "Yesterday";
-    } else {
-      return messageDate.toLocaleDateString(undefined, {
-        day: "2-digit",
-        month: "short",
-      });
-    }
-  };
-
-  const renderMessageOptions = () => (
-    <Modal
-      visible={showMessageOptions}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setShowMessageOptions(false)}
-    >
-      <TouchableOpacity 
-        style={styles.modalOverlay}
-        activeOpacity={1}
-        onPress={() => setShowMessageOptions(false)}
-      >
-        <View style={[
-          styles.messageOptions,
-          {
-            top: messageOptionsPosition.y - 100,
-            left: messageOptionsPosition.x - 100,
-          }
-        ]}>
-          <TouchableOpacity 
-            style={styles.optionButton}
-            onPress={() => {
-              setShowMessageOptions(false);
-              if (selectedMessage) {
-                setSelectedMessageForReaction(selectedMessage);
-                setShowReactions(true);
-              }
-            }}
-          >
-            <Text style={styles.optionText}>React</Text>
-          </TouchableOpacity>
-          {selectedMessage?.sender.uid === currentUser.uid && (
-            <>
-              <TouchableOpacity 
-                style={styles.optionButton}
-                onPress={handleEditMessage}
-              >
-                <Text style={styles.optionText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.optionButton}
-                onPress={handleDeleteMessage}
-              >
-                <Text style={[styles.optionText, styles.deleteOption]}>Delete</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-
-  const handleAddReaction = async (messageId: string, emoji: string) => {
-    try {
-      await CometChat.addReaction(messageId, emoji);
-      
-  
-      setMessages(prevMessages => 
-        prevMessages.map(msg => {
-          if (msg.id === messageId) {
-            const currentReactions = msg.reactions || [];
-            const existingIndex = currentReactions.findIndex(r => r.emoji === emoji);
-            
-            if (existingIndex >= 0) {
-              const updatedReactions = [...currentReactions];
-              updatedReactions[existingIndex] = {
-                ...updatedReactions[existingIndex],
-                count: updatedReactions[existingIndex].count + 1,
-                reactedByMe: true
-              };
-              return { ...msg, reactions: updatedReactions };
-            } else {
-              return {
-                ...msg,
-                reactions: [...currentReactions, { emoji, count: 1, reactedByMe: true }]
-              };
-            }
-          }
-          return msg;
-        })
-      );
-      
-      setShowReactions(false);
-    } catch (error) {
-      console.error("Error adding reaction:", error);
-      Alert.alert("Error", "Failed to add reaction. Please try again.");
-    }
-  };
-
-  const handleRemoveReaction = async (messageId: string, emoji: string) => {
-    try {
-      await CometChat.removeReaction(messageId, emoji);
-      setMessages(prevMessages => 
-        prevMessages.map(msg => {
-          if (msg.id === messageId) {
-            const currentReactions = msg.reactions || [];
-            const updatedReactions = currentReactions.map(r => {
-              if (r.emoji === emoji) {
-                return {
-                  ...r,
-                  count: Math.max(0, r.count - 1),
-                  reactedByMe: false
-                };
-              }
-              return r;
-            }).filter(r => r.count > 0);
-            
-            return { ...msg, reactions: updatedReactions };
-          }
-          return msg;
-        })
-      );
-    } catch (error) {
-      console.error("Error removing reaction:", error);
-      Alert.alert("Error", "Failed to remove reaction. Please try again.");
-    }
-  };
-
-  const handleReactionPress = (message: ChatMessage) => {
-    setSelectedMessageForReaction(message);
-    setShowReactions(true);
-  };
-
-  const renderReactions = (message: ChatMessage) => {
-    if (!message.reactions || message.reactions.length === 0) return null;
-
-    return (
-      <View style={styles.reactionsContainer}>
-        {message.reactions.map((reaction, index) => (
-          <TouchableOpacity
-            key={index}
-            style={[
-              styles.reactionBubble,
-              reaction.reactedByMe && styles.reactedBubble
-            ]}
-            onPress={() => {
-              if (reaction.reactedByMe) {
-                handleRemoveReaction(message.id, reaction.emoji);
-              } else {
-                handleAddReaction(message.id, reaction.emoji);
-              }
-            }}
-          >
-            <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
-            <Text style={styles.reactionCount}>{reaction.count}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
-  const renderReactionPicker = () => (
-    <Modal
-      visible={showReactions}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowReactions(false)}
-    >
-      <View style={styles.reactionPickerContainer}>
-        <View style={styles.reactionPicker}>
-          <View style={styles.reactionPickerHeader}>
-            <Text style={styles.reactionPickerTitle}>Add Reaction</Text>
-            <TouchableOpacity 
-              onPress={() => setShowReactions(false)}
-              style={styles.closeButton}
-            >
-              <Text style={styles.closeButtonText}>×</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.reactionGrid}>
-            {['😊', '😂', '👍', '❤️', '😍', '😭', '😅', '😆'].map((emoji, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.reactionOption}
-                onPress={() => {
-                  if (selectedMessageForReaction) {
-                    handleAddReaction(selectedMessageForReaction.id, emoji);
-                  }
-                }}
-              >
-                <Text style={styles.reactionOptionEmoji}>{emoji}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  const requestCameraPermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          {
-            title: "Camera Permission",
-            message: "This app needs access to your camera to take photos.",
-            buttonNeutral: "Ask Me Later",
-            buttonNegative: "Cancel",
-            buttonPositive: "OK"
-          }
-        );
-        
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn(err);
-        return false;
-      }
-    }
-    return true; // iOS handles permissions through the image picker
-  };
-
-  const requestStoragePermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-          {
-            title: "Storage Permission",
-            message: "This app needs access to your storage to select media.",
-            buttonNeutral: "Ask Me Later",
-            buttonNegative: "Cancel",
-            buttonPositive: "OK"
-          }
-        );
-        
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn(err);
-        return false;
-      }
-    }
-    return true; // iOS handles permissions through the image picker
   };
 
   const handleAttachmentPress = () => {
@@ -972,13 +334,13 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         },
         (buttonIndex) => {
           if (buttonIndex === 1) {
-            handleCameraPress();
+            handleCameraPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions);
           } else if (buttonIndex === 2) {
-            handleGalleryPress();
+            handleGalleryPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions);
           } else if (buttonIndex === 3) {
-            handleAudioPress();
+            handleAudioPress(handleSendMediaMessageWrapper, setShowAttachmentOptions);
           } else if (buttonIndex === 4) {
-            handleVideoPress();
+            handleVideoPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions);
           }
         }
       );
@@ -987,154 +349,35 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     }
   };
 
-  const handleCameraPress = async () => {
-    const hasPermission = await requestCameraPermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Cannot access camera');
-      return;
-    }
-
-    const options: ImagePicker.CameraOptions = {
-      mediaType: 'photo',
-      includeBase64: false,
-      saveToPhotos: true,
-      quality: 0.8,
-    };
-
-    ImagePicker.launchCamera(options, (response) => {
-      if (response.didCancel) {
-        console.log('User cancelled camera');
-      } else if (response.errorCode) {
-        console.log('Camera Error: ', response.errorMessage);
-      } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
-        const uri = response.assets[0].uri;
-        const type = response.assets[0].type || 'image/jpeg';
-        setMediaPreview({ uri, type });
-        handleSendMediaMessage(uri, type, 'image');
-        setShowAttachmentOptions(false);
-      }
-    });
+  const handleSendMediaMessageWrapper = async (uri: string, type: string, mediaCategory: 'image' | 'video' | 'audio') => {
+    await handleSendMediaMessage(uri, type, mediaCategory, selectedUser, setMessages, flatListRef, setMediaPreview);
   };
 
-  const handleGalleryPress = async () => {
-    const hasPermission = await requestStoragePermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Cannot access photos');
-      return;
+  const debouncedTypingIndicator = useRef<NodeJS.Timeout | null>(null);
+  const handleTyping = () => {
+    if (debouncedTypingIndicator.current) {
+      clearTimeout(debouncedTypingIndicator.current);
     }
-
-    const options: ImagePicker.ImageLibraryOptions = {
-      mediaType: 'photo',
-      includeBase64: false,
-      quality: 0.8,
-    };
-
-    ImagePicker.launchImageLibrary(options, (response) => {
-      if (response.didCancel) {
-        console.log('User cancelled gallery');
-      } else if (response.errorCode) {
-        console.log('Gallery Error: ', response.errorMessage);
-      } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
-        const uri = response.assets[0].uri;
-        const type = response.assets[0].type || 'image/jpeg';
-        setMediaPreview({ uri, type });
-        handleSendMediaMessage(uri, type, 'image');
-        setShowAttachmentOptions(false);
+    
+    debouncedTypingIndicator.current = setTimeout(async () => {
+      try {
+        await typeMessageStarted(selectedUser.uid);
+      } catch (error) {
+        console.error("Error starting typing indicator:", error);
       }
-    });
+    }, 100);
   };
 
-  const handleAudioPress = async () => {
-    const hasPermission = await requestStoragePermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Cannot access files');
-      return;
+  const handleTypingEnd = async () => {
+    if (debouncedTypingIndicator.current) {
+      clearTimeout(debouncedTypingIndicator.current);
+      debouncedTypingIndicator.current = null;
     }
-
+    
     try {
-      const result = await DocumentPicker.pick({
-        type: [DocumentPicker.types.audio],
-      });
-      
-      const file = result[0];
-      handleSendMediaMessage(file.uri, file.type || 'audio/mpeg', 'audio');
-      setShowAttachmentOptions(false);
-    } catch (err) {
-      if (DocumentPicker.isCancel(err)) {
-        console.log('User cancelled document picker');
-      } else {
-        console.error('Error selecting audio:', err);
-      }
-    }
-  };
-
-  const handleVideoPress = async () => {
-    const hasPermission = await requestStoragePermission();
-    if (!hasPermission) {
-      Alert.alert('Permission Denied', 'Cannot access videos');
-      return;
-    }
-
-    const options: ImagePicker.ImageLibraryOptions = {
-      mediaType: 'video',
-      includeBase64: false,
-      quality: 0.8,
-    };
-
-    ImagePicker.launchImageLibrary(options, (response) => {
-      if (response.didCancel) {
-        console.log('User cancelled video selection');
-      } else if (response.errorCode) {
-        console.log('Video Selection Error: ', response.errorMessage);
-      } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
-        const uri = response.assets[0].uri;
-        const type = response.assets[0].type || 'video/mp4';
-        setMediaPreview({ uri, type });
-        handleSendMediaMessage(uri, type, 'video');
-        setShowAttachmentOptions(false);
-      }
-    });
-  };
-
-  const handleSendMediaMessage = async (uri: string, type: string, mediaCategory: 'image' | 'video' | 'audio') => {
-    try {
-      // Extract filename from uri
-      const uriParts = uri.split('/');
-      const fileName = uriParts[uriParts.length - 1];
-      
-      let messageType: typeof CometChat.MESSAGE_TYPE.IMAGE | 
-                        typeof CometChat.MESSAGE_TYPE.VIDEO | 
-                        typeof CometChat.MESSAGE_TYPE.AUDIO;
-                        
-      switch (mediaCategory) {
-        case 'image':
-          messageType = CometChat.MESSAGE_TYPE.IMAGE;
-          break;
-        case 'video':
-          messageType = CometChat.MESSAGE_TYPE.VIDEO;
-          break;
-        case 'audio':
-          messageType = CometChat.MESSAGE_TYPE.AUDIO;
-          break;
-        default:
-          messageType = CometChat.MESSAGE_TYPE.IMAGE;
-      }
-      
-      const mediaFile = {
-        uri,
-        type,
-        name: fileName
-      };
-      
-      const sentMessage = await sendMediaMessage(selectedUser.uid, mediaFile, messageType);
-      setMessages(prevMessages => [...prevMessages, sentMessage as ChatMessage]);
-      flatListRef.current?.scrollToEnd({ animated: true });
-      
-      // Clear the media preview
-      setMediaPreview(null);
+      await typeMessageEnded(selectedUser.uid);
     } catch (error) {
-      console.error("Error sending media message:", error);
-      Alert.alert("Error", "Failed to send media message. Please try again.");
+      console.error("Error ending typing indicator:", error);
     }
   };
 
@@ -1204,7 +447,10 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                   <TouchableOpacity onPress={cancelEdit} style={styles.editButton}>
                     <Text style={styles.editButtonText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={handleEditSubmit} style={[styles.editButton, styles.saveButton]}>
+                  <TouchableOpacity 
+                    onPress={() => handleEditMessage(selectedMessage, editText, setMessages, setEditingMessage, setEditText)} 
+                    style={[styles.editButton, styles.saveButton]}
+                  >
                     <Text style={styles.editButtonText}>Save</Text>
                   </TouchableOpacity>
                 </View>
@@ -1223,14 +469,14 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                     {item.type === CometChat.MESSAGE_TYPE.VIDEO && item.attachment?.url && (
                       <View style={styles.videoContainer}>
                         <View style={styles.videoPlaceholder}>
-                          <Icon name="videocam" size={40} color="#075E54" />
+                          <Icon name="videocam-outline" size={40} color="#075E54" />
                         </View>
-                        <Icon name="play-circle" size={30} color="#075E54" style={styles.playButton} />
+                        <Icon name="play-circle-outline" size={30} color="#075E54" style={styles.playButton} />
                       </View>
                     )}
                     {item.type === CometChat.MESSAGE_TYPE.AUDIO && item.attachment?.url && (
                       <View style={styles.audioContainer}>
-                        <Icon name="musical-note" size={24} color="#075E54" />
+                        <Icon name="musical-notes-outline" size={24} color="#075E54" />
                         <Text style={styles.audioText}>Audio Message</Text>
                       </View>
                     )}
@@ -1245,9 +491,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                   <View style={styles.messageFooter}>
                     <Text style={styles.messageTime}>{messageTime}</Text>
                     {isSentByMe && (
-                     <Text style={{ color: item.status === 'seen'  ? '#34B7F1' : '#666' }}>
-                     {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
-                   </Text>
+                      <Text style={{ color: item.status === 'seen' ? '#34B7F1' : '#666' }}>
+                        {item.status === 'seen' ? '✓✓' : item.status === 'delivered' ? '✓✓' : '✓'}
+                      </Text>
                     )}
                     {isEdited && (
                       <Text style={styles.editedText}>edited</Text>
@@ -1280,59 +526,127 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     );
   };
 
-  
-  const debouncedTypingIndicator = useRef<NodeJS.Timeout | null>(null);
-  const handleTyping = () => {
-    if (debouncedTypingIndicator.current) {
-      clearTimeout(debouncedTypingIndicator.current);
-    }
-    
-    debouncedTypingIndicator.current = setTimeout(async () => {
-      try {
-        await typeMessageStarted(selectedUser.uid);
-      } catch (error) {
-        console.error("Error starting typing indicator:", error);
-      }
-    }, 100); 
+  const renderReactions = (message: ChatMessage) => {
+    if (!message.reactions || message.reactions.length === 0) return null;
+
+    return (
+      <View style={styles.reactionsContainer}>
+        {message.reactions.map((reaction, index) => (
+          <TouchableOpacity
+            key={index}
+            style={[
+              styles.reactionBubble,
+              reaction.reactedByMe && styles.reactedBubble
+            ]}
+            onPress={() => {
+              if (reaction.reactedByMe) {
+                handleRemoveReaction(message.id, reaction.emoji, setMessages);
+              } else {
+                handleAddReaction(message.id, reaction.emoji, setMessages);
+              }
+            }}
+          >
+            <Text style={styles.reactionEmoji}>{reaction.emoji}</Text>
+            <Text style={styles.reactionCount}>{reaction.count}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
   };
 
-  const handleTypingEnd = async () => {
-    if (debouncedTypingIndicator.current) {
-      clearTimeout(debouncedTypingIndicator.current);
-      debouncedTypingIndicator.current = null;
-    }
-    
-    try {
-      await typeMessageEnded(selectedUser.uid);
-    } catch (error) {
-      console.error("Error ending typing indicator:", error);
-    }
-  };
+  const renderMessageOptions = () => (
+    <Modal
+      visible={showMessageOptions}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowMessageOptions(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={() => setShowMessageOptions(false)}
+      >
+        <View style={[
+          styles.messageOptions,
+          {
+            top: messageOptionsPosition.y - 100,
+            left: messageOptionsPosition.x - 100,
+          }
+        ]}>
+          <TouchableOpacity 
+            style={styles.optionButton}
+            onPress={() => {
+              setShowMessageOptions(false);
+              if (selectedMessage) {
+                setSelectedMessageForReaction(selectedMessage);
+                setShowReactions(true);
+              }
+            }}
+          >
+            <Text style={styles.optionText}>React</Text>
+          </TouchableOpacity>
+          {selectedMessage?.sender.uid === currentUser.uid && (
+            <>
+              <TouchableOpacity 
+                style={styles.optionButton}
+                onPress={() => {
+                  setEditingMessage(selectedMessage);
+                  setEditText(selectedMessage.text);
+                  setShowMessageOptions(false);
+                }}
+              >
+                <Text style={styles.optionText}>Edit</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.optionButton}
+                onPress={() => handleDeleteMessage(selectedMessage, setMessages)}
+              >
+                <Text style={[styles.optionText, styles.deleteOption]}>Delete</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
 
-  const markMessagesAsRead = async () => {
-    try {
-      const unreadMessages = messages.filter(
-        msg => msg.sender.uid !== currentUser.uid && msg.status !== 'seen'
-      );
-
-      for (const msg of unreadMessages) {
-        await CometChat.markAsRead(msg.id);
-        setMessages(prevMessages =>
-          prevMessages.map(message => {
-            if (message.id === msg.id) {
-              return {
-                ...message,
-                status: 'seen'
-              };
-            }
-            return message;
-          })
-        );
-      }
-    } catch (error) {
-      console.error("Error marking messages as read:", error);
-    }
-  };
+  const renderReactionPicker = () => (
+    <Modal
+      visible={showReactions}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowReactions(false)}
+    >
+      <View style={styles.reactionPickerContainer}>
+        <View style={styles.reactionPicker}>
+          <View style={styles.reactionPickerHeader}>
+            <Text style={styles.reactionPickerTitle}>Add Reaction</Text>
+            <TouchableOpacity 
+              onPress={() => setShowReactions(false)}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeButtonText}>×</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.reactionGrid}>
+            {['😊', '😂', '👍', '❤️', '😍', '😭', '😅', '😆'].map((emoji, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.reactionOption}
+                onPress={() => {
+                  if (selectedMessageForReaction) {
+                    handleAddReaction(selectedMessageForReaction.id, emoji, setMessages);
+                  }
+                }}
+              >
+                <Text style={styles.reactionOptionEmoji}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   const renderAttachmentOptions = () => (
     <Modal
@@ -1349,30 +663,30 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         <View style={styles.attachmentContainer}>
           <TouchableOpacity 
             style={styles.attachmentOption}
-            onPress={handleCameraPress}
+            onPress={() => handleCameraPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="camera" size={24} color="#075E54" />
+            <Icon name="camera-outline" size={24} color="#075E54" />
             <Text style={styles.attachmentText}>Camera</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
-            onPress={handleGalleryPress}
+            onPress={() => handleGalleryPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="image" size={24} color="#075E54" />
+            <Icon name="images-outline" size={24} color="#075E54" />
             <Text style={styles.attachmentText}>Gallery</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
-            onPress={handleAudioPress}
+            onPress={() => handleAudioPress(handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="musical-note" size={24} color="#075E54" />
+            <Icon name="musical-notes-outline" size={24} color="#075E54" />
             <Text style={styles.attachmentText}>Audio</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
-            onPress={handleVideoPress}
+            onPress={() => handleVideoPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            <Icon name="videocam" size={24} color="#075E54" />
+            <Icon name="videocam-outline" size={24} color="#075E54" />
             <Text style={styles.attachmentText}>Video</Text>
           </TouchableOpacity>
         </View>
@@ -1443,7 +757,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             style={styles.attachButton}
             onPress={handleAttachmentPress}
           >
-            <Icon name="attach" size={24} color="#128C7E" />
+            <Icon name="add-circle-outline" size={24} color="#128C7E" />
           </TouchableOpacity>
           <TextInput
             style={styles.chatInput}
@@ -1460,7 +774,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           />
           <TouchableOpacity 
             style={styles.sendButton} 
-            onPress={handleSendMessage}
+            onPress={() => handleSendMessage(newMessage, selectedUser, currentUser, setMessages, setNewMessage, flatListRef)}
           >
             <Text style={styles.sendButtonText}>Send</Text>
           </TouchableOpacity>
@@ -1475,7 +789,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f0f0f0',
     marginTop: Platform.OS === 'android' ? 10:0,
-    
   },
   header: {
     backgroundColor: '#075E54',
