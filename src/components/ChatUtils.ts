@@ -599,9 +599,11 @@ export const handleAudioPress = async (
       type: [DocumentPicker.types.audio],
     });
     
-    const file = result[0];
-    handleSendMediaMessage(file.uri, file.type || 'audio/mpeg', 'audio');
-    setShowAttachmentOptions(false);
+    if (result && (Array.isArray(result) ? result.length > 0 : true)) {
+      const file = Array.isArray(result) ? result[0] : result;
+      handleSendMediaMessage(file.uri, file.type || 'audio/mpeg', 'audio');
+      setShowAttachmentOptions(false);
+    }
   } catch (err) {
     if (DocumentPicker.isCancel(err)) {
       console.log('User cancelled document picker');
@@ -622,25 +624,42 @@ export const handleVideoPress = async (
     return;
   }
 
-  const options: ImagePicker.ImageLibraryOptions = {
-    mediaType: 'video',
-    includeBase64: false,
-    quality: 0.8,
-  };
-
-  ImagePicker.launchImageLibrary(options, (response) => {
-    if (response.didCancel) {
-      console.log('User cancelled video selection');
-    } else if (response.errorCode) {
-      console.log('Video Selection Error: ', response.errorMessage);
-    } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
-      const uri = response.assets[0].uri;
-      const type = response.assets[0].type || 'video/mp4';
-      setMediaPreview({ uri, type });
-      handleSendMediaMessage(uri, type, 'video');
+  try {
+    const result = await DocumentPicker.pick({
+      type: [DocumentPicker.types.video],
+    });
+    
+    if (result && (Array.isArray(result) ? result.length > 0 : true)) {
+      const file = Array.isArray(result) ? result[0] : result;
+      setMediaPreview({ uri: file.uri, type: file.type || 'video/mp4' });
+      handleSendMediaMessage(file.uri, file.type || 'video/mp4', 'video');
       setShowAttachmentOptions(false);
     }
-  });
+  } catch (err) {
+    if (DocumentPicker.isCancel(err)) {
+      console.log('User cancelled video selection');
+    } else {
+      const options: ImagePicker.ImageLibraryOptions = {
+        mediaType: 'video',
+        includeBase64: false,
+        quality: 0.8,
+      };
+
+      ImagePicker.launchImageLibrary(options, (response) => {
+        if (response.didCancel) {
+          console.log('User cancelled video selection');
+        } else if (response.errorCode) {
+          console.log('Video Selection Error: ', response.errorMessage);
+        } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
+          const uri = response.assets[0].uri;
+          const type = response.assets[0].type || 'video/mp4';
+          setMediaPreview({ uri, type });
+          handleSendMediaMessage(uri, type, 'video');
+          setShowAttachmentOptions(false);
+        }
+      });
+    }
+  }
 };
 
 export const handleSendMediaMessage = async (
@@ -680,7 +699,18 @@ export const handleSendMediaMessage = async (
       name: fileName
     };
     
+    if (mediaCategory === 'video') {
+      Alert.alert("Uploading", "Your video is being uploaded. This might take a moment.");
+    }
+    
     const sentMessage = await sendMediaMessage(selectedUser.uid, mediaFile, messageType);
+    
+    if (mediaCategory === 'video') {
+      setTimeout(() => {
+        Alert.alert("Success", "Video sent successfully");
+      }, 500);
+    }
+    
     setMessages(prevMessages => [...prevMessages, sentMessage as ChatMessage]);
     flatListRef.current?.scrollToEnd({ animated: true });
     

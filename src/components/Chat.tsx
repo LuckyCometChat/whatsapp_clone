@@ -14,7 +14,8 @@ import {
   Alert,
   Modal,
   ActionSheetIOS,
-  PermissionsAndroid
+  PermissionsAndroid,
+  Linking
 } from 'react-native';
 import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded, sendMediaMessage } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage, Reaction } from '../types/index';
@@ -22,6 +23,7 @@ import { CometChat } from '@cometchat/chat-sdk-react-native';
 import * as ImagePicker from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
 import Icon from 'react-native-vector-icons/Ionicons';
+import Video from 'react-native-video';
 import { 
   updateReactions,
   loadMessages,
@@ -65,6 +67,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const messageListenerRef = useRef<string | null>(null);
   const [showAttachmentOptions, setShowAttachmentOptions] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<{ uri: string; type: string } | null>(null);
+  const [playingVideo, setPlayingVideo] = useState<string | null>(null);
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
@@ -224,11 +227,25 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             (senderId === currentUser.uid && receiverId === selectedUser.uid)
           ) {
             const attachment = mediaMessage.getAttachment();
+            console.log("Media message received with attachment:", attachment ? {
+              url: attachment.getUrl(),
+              type: attachment.getMimeType(),
+              name: attachment.getName()
+            } : "No attachment");
+            
+            // Set appropriate text based on media type
+            let messageText = 'Media';
+            if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.IMAGE) {
+              messageText = 'Image';
+            } else if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO) {
+              messageText = 'Video';
+            } else if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.AUDIO) {
+              messageText = 'Audio';
+            }
+            
             const convertedMessage: ChatMessage = {
               id: mediaMessage.getId().toString(),
-              text: mediaMessage.getType() === CometChat.MESSAGE_TYPE.IMAGE ? 'Image' :
-                    mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO ? 'Video' :
-                    mediaMessage.getType() === CometChat.MESSAGE_TYPE.AUDIO ? 'Audio' : 'Media',
+              text: messageText,
               sender: {
                 uid: mediaMessage.getSender().getUid(),
                 name: mediaMessage.getSender().getName(),
@@ -241,9 +258,13 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
               attachment: attachment ? {
                 url: attachment.getUrl(),
                 type: attachment.getMimeType(),
-                name: attachment.getName()
+                name: mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO 
+                      ? 'video.mp4' 
+                      : (attachment.getName() || 'media')
               } : undefined
             };
+            
+            console.log("Converted media message:", convertedMessage);
             setMessages(prevMessages => [...prevMessages, convertedMessage]);
           }
 
@@ -467,13 +488,32 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                       />
                     )}
                     {item.type === CometChat.MESSAGE_TYPE.VIDEO && item.attachment?.url && (
-                      <View style={styles.videoContainer}>
-                        <View style={styles.videoPlaceholder}>
-                          <Icon name="videocam-outline" size={40} color="#075E54" />
-                        </View>
-                        <Icon name="play-circle-outline" size={30} color="#075E54" style={styles.playButton} />
-                      </View>
-                    )}
+  <>
+    {playingVideo === item.id ? (
+      <View style={styles.videoContainer}>
+        <Video
+          source={{ uri: item.attachment.url }}
+          style={styles.videoPlayer}
+          controls={true}
+          resizeMode="contain"
+          onEnd={() => setPlayingVideo(null)}
+        />
+      </View>
+    ) : (
+      <TouchableOpacity 
+        style={styles.videoContainer}
+        onPress={() => setPlayingVideo(item.id)}
+      >
+        <View style={styles.videoPlaceholder}>
+          {/* <Icon name="videocam-outline" size={40} color="#075E54" /> */}
+          <Text style={{ fontSize: 30 }}>▶️</Text>
+          <Text style={styles.videoText}>Video Message</Text>
+        </View>
+        {/* <Icon name="play-circle-outline" size={30} color="#075E54" style={styles.playButton} /> */}
+      </TouchableOpacity>
+    )}
+  </>
+)}
                     {item.type === CometChat.MESSAGE_TYPE.AUDIO && item.attachment?.url && (
                       <View style={styles.audioContainer}>
                         <Icon name="musical-notes-outline" size={24} color="#075E54" />
@@ -1185,17 +1225,18 @@ const styles = StyleSheet.create({
     width: 200,
     height: 150,
     borderRadius: 8,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#1c2227',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    overflow: 'hidden',
   },
   videoPlaceholder: {
     width: '100%',
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#2c3e50',
     borderRadius: 8,
   },
   videoThumbnail: {
@@ -1205,6 +1246,8 @@ const styles = StyleSheet.create({
   },
   playButton: {
     position: 'absolute',
+    color: '#fff',
+    fontSize: 40,
   },
   audioContainer: {
     flexDirection: 'row',
@@ -1213,10 +1256,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
     borderRadius: 8,
   },
+  videoPlayer: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+  },
   audioText: {
     marginLeft: 10,
     color: '#075E54',
     fontSize: 14,
+  },
+  videoText: {
+    marginTop: 5,
+    color: '#fff',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });
 

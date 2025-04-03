@@ -377,6 +377,8 @@ export const sendMediaMessage = async (
                typeof CometChat.MESSAGE_TYPE.AUDIO
 ): Promise<ChatMessage> => {
   try {
+    console.log(`Sending media message: type=${messageType}, uri=${mediaFile.uri}`);
+    
     // Create a media message
     const mediaMessage = new CometChat.MediaMessage(
       receiverUid,
@@ -385,13 +387,40 @@ export const sendMediaMessage = async (
       CometChat.RECEIVER_TYPE.USER
     );
     
+    // For videos, set some metadata to help with playback
+    if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+      mediaMessage.setMetadata({
+        fileType: 'video/mp4',
+        playable: true
+      });
+    }
+    
     // Send the media message
     const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+    console.log("Media message sent successfully:", sentMessage);
+    
     const attachment = (sentMessage as CometChat.MediaMessage).getAttachment();
+    console.log("Attachment details:", attachment ? {
+      url: attachment.getUrl(),
+      type: attachment.getMimeType(),
+      name: attachment.getName()
+    } : "No attachment");
+    
+    // Set message text based on type
+    let messageText = '';
+    if (messageType === CometChat.MESSAGE_TYPE.IMAGE) {
+      messageText = 'Image';
+    } else if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+      messageText = 'Video';
+    } else if (messageType === CometChat.MESSAGE_TYPE.AUDIO) {
+      messageText = 'Audio';
+    } else {
+      messageText = 'Media';
+    }
     
     return {
       id: sentMessage.getId().toString(),
-      text: '',
+      text: messageText,
       sender: {
         uid: sentMessage.getSender().getUid(),
         name: sentMessage.getSender().getName(),
@@ -403,7 +432,7 @@ export const sendMediaMessage = async (
       attachment: attachment ? {
         url: attachment.getUrl(),
         type: attachment.getMimeType(),
-        name: mediaFile.name
+        name: messageType === CometChat.MESSAGE_TYPE.VIDEO ? 'video.mp4' : mediaFile.name
       } : undefined
     };
   } catch (error) {
