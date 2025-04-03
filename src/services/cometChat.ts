@@ -297,6 +297,17 @@ export const subscribeToMessages = (callback: (message: CometChat.BaseMessage) =
       },
       onMediaMessageReceived: (message: CometChat.MediaMessage) => {
         console.log("Media message received:", message);
+        const attachment = message.getAttachment();
+        if (attachment) {
+          // Convert media message to include attachment
+          (message as any).attachment = {
+            url: attachment.getUrl(),
+            type: attachment.getMimeType(),
+            name: message.getType() === CometChat.MESSAGE_TYPE.IMAGE ? 'image.jpg' :
+                  message.getType() === CometChat.MESSAGE_TYPE.VIDEO ? 'video.mp4' :
+                  'audio.mp3'
+          };
+        }
         callback(message);
       },
       onCustomMessageReceived: (message: CometChat.CustomMessage) => {
@@ -339,4 +350,51 @@ export const subscribeToReactions = (callback: (message: CometChat.BaseMessage) 
     CometChat.removeMessageListener(listenerID);
     console.log("Reaction listener removed:", listenerID);
   };
+};
+
+export const sendMediaMessage = async (
+  receiverUid: string, 
+  mediaFile: { 
+    uri: string; 
+    type: string;
+    name: string;
+  }, 
+  messageType: typeof CometChat.MESSAGE_TYPE.IMAGE | 
+               typeof CometChat.MESSAGE_TYPE.VIDEO | 
+               typeof CometChat.MESSAGE_TYPE.AUDIO
+): Promise<ChatMessage> => {
+  try {
+    // Create a media message
+    const mediaMessage = new CometChat.MediaMessage(
+      receiverUid,
+      mediaFile,
+      messageType,
+      CometChat.RECEIVER_TYPE.USER
+    );
+    
+    // Send the media message
+    const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+    const attachment = (sentMessage as CometChat.MediaMessage).getAttachment();
+    
+    return {
+      id: sentMessage.getId().toString(),
+      text: '',
+      sender: {
+        uid: sentMessage.getSender().getUid(),
+        name: sentMessage.getSender().getName(),
+        avatar: sentMessage.getSender().getAvatar()
+      },
+      sentAt: sentMessage.getSentAt(),
+      type: sentMessage.getType(),
+      status: 'sent',
+      attachment: attachment ? {
+        url: attachment.getUrl(),
+        type: attachment.getMimeType(),
+        name: mediaFile.name
+      } : undefined
+    };
+  } catch (error) {
+    console.error("Error sending media message:", error);
+    throw error;
+  }
 }; 

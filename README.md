@@ -1,97 +1,119 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# WhatsApp Clone with CometChat
 
-# Getting Started
+A React Native mobile application that replicates the core features of WhatsApp using CometChat for real-time messaging.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+- Real-time messaging
+- User online/offline status
+- Message status (sent, delivered, seen)
+- Media messaging (images, videos, audio)
+- Message reactions
+- Message editing and deletion
+- Typing indicators
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Setup
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### Prerequisites
 
-```sh
-# Using npm
-npm start
+- Node.js and npm installed
+- React Native development environment set up
+- CometChat Pro account
 
-# OR using Yarn
-yarn start
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+```
+npm install
+```
+3. Install iOS dependencies:
+```
+cd ios && pod install && cd ..
 ```
 
-## Step 2: Build and run your app
+### Configuration
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+1. Create a `.env` file in the root directory and add your CometChat credentials:
 ```
+APP_ID=your-app-id
+AUTH_KEY=your-auth-key
+REGION=your-region
+```
+
+2. Start the application:
+```
+npm run start
+```
+
+## Media Permissions Setup
 
 ### iOS
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+1. Open the iOS project in Xcode.
+2. Navigate to Info.plist and add the following permissions:
+   - NSCameraUsageDescription: "This app needs access to your camera to take photos for sending in chats."
+   - NSPhotoLibraryUsageDescription: "This app needs access to your photo library to send images in chats."
+   - NSMicrophoneUsageDescription: "This app needs access to your microphone to record audio messages."
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### Android
 
-```sh
-bundle install
+1. Open the `android/app/src/main/AndroidManifest.xml` file and add the following permissions:
+
+```xml
+<uses-permission android:name="android.permission.CAMERA" />
+<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
 ```
 
-Then, and every time you update your native dependencies, run:
+## Required Dependencies
 
-```sh
-bundle exec pod install
+For media handling, ensure these packages are installed:
+
+```
+npm install react-native-image-picker react-native-document-picker react-native-vector-icons
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Additional configuration is required for vector icons:
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+### iOS
+Add the following to your `ios/Podfile`:
+```
+pod 'RNVectorIcons', :path => '../node_modules/react-native-vector-icons'
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+Then run:
+```
+cd ios && pod install
+```
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+### Android
+No additional setup required for Android as it's included in the gradle build.
 
-## Step 3: Modify your app
+## Usage
 
-Now that you have successfully run the app, let's make changes!
+### Media Messages
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+The app supports sending:
+- Images (from camera or gallery)
+- Videos
+- Audio files
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+To send media:
+1. Tap the attachment icon in the chat input
+2. Select the media type
+3. Choose the file to send
+4. The media will be uploaded and sent automatically
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+## Troubleshooting
 
-## Congratulations! :tada:
+### Permission Issues
+- iOS: Ensure that the permission strings are added to Info.plist
+- Android: Make sure to request permissions at runtime using PermissionsAndroid API
 
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+### Loading Media Files
+If media files aren't loading:
+1. Check network connectivity
+2. Verify that media URLs are correctly formatted
+3. Ensure CometChat media tokens are valid

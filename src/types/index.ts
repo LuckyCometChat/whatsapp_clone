@@ -41,4 +41,9 @@ export interface ChatMessage {
   editedAt?: number;
   editedBy?: string;
   reactions?: Reaction[];
+  attachment?: {
+    url: string;
+    type: string;
+    name: string;
+  };
 } 
