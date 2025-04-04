@@ -439,4 +439,179 @@ export const sendMediaMessage = async (
     console.error("Error sending media message:", error);
     throw error;
   }
+};
+
+export const sendThreadMessage = async (receiverUid: string, message: string, parentMessageId: string): Promise<ChatMessage> => {
+  try {
+    const textMessage = new CometChat.TextMessage(
+      receiverUid,
+      message,
+      CometChat.RECEIVER_TYPE.USER
+    );
+    
+    textMessage.setParentMessageId(parseInt(parentMessageId));
+    
+    const sentMessage = await CometChat.sendMessage(textMessage);
+   
+    return {
+      id: sentMessage.getId().toString(),
+      text: (sentMessage as CometChat.TextMessage).getText(),
+      sender: {
+        uid: sentMessage.getSender().getUid(),
+        name: sentMessage.getSender().getName(),
+        avatar: sentMessage.getSender().getAvatar()
+      },
+      sentAt: sentMessage.getSentAt(),
+      type: sentMessage.getType(),
+      status: 'sent',
+      parentMessageId: sentMessage.getParentMessageId()?.toString()
+    };
+  } catch (error) {
+    console.error("Error sending thread message:", error);
+    throw error;
+  }
+};
+
+export const fetchThreadMessages = async (parentMessageId: string) => {
+  try {
+    if (!parentMessageId) {
+      console.error("Invalid parent message ID provided to fetchThreadMessages:", parentMessageId);
+      return [];
+    }
+    
+    const messagesRequest = new CometChat.MessagesRequestBuilder()
+      .setParentMessageId(parseInt(parentMessageId))
+      .setLimit(50)
+      .build();
+    
+    const messages = await messagesRequest.fetchPrevious();
+    
+    if (!messages || !Array.isArray(messages)) {
+      console.warn("fetchThreadMessages: No messages returned or invalid format");
+      return [];
+    }
+    
+    return messages;
+  } catch (error) {
+    console.error("Error fetching thread messages:", error);
+    // Return empty array instead of throwing to prevent app crashes
+    return [];
+  }
+};
+
+export const subscribeToThreadMessages = (parentMessageId: string, callback: (message: CometChat.BaseMessage) => void) => {
+  const listenerID = `thread_message_listener_${parentMessageId}`;
+  
+  CometChat.addMessageListener(
+    listenerID,
+    new CometChat.MessageListener({
+      onTextMessageReceived: (message: CometChat.TextMessage) => {
+        if (message.getParentMessageId()?.toString() === parentMessageId) {
+          console.log("Thread text message received:", message);
+          callback(message);
+        }
+      },
+      onMediaMessageReceived: (message: CometChat.MediaMessage) => {
+        if (message.getParentMessageId()?.toString() === parentMessageId) {
+          console.log("Thread media message received:", message);
+          callback(message);
+        }
+      },
+      onCustomMessageReceived: (message: CometChat.CustomMessage) => {
+        if (message.getParentMessageId()?.toString() === parentMessageId) {
+          console.log("Thread custom message received:", message);
+          callback(message);
+        }
+      },
+      onError: (error: CometChat.CometChatException) => {
+        console.error("Thread message listener error:", error);
+      }
+    })
+  );
+
+  return () => {
+    CometChat.removeMessageListener(listenerID);
+    console.log("Thread message listener removed:", listenerID);
+  };
+};
+
+export const sendMediaThreadMessage = async (
+  receiverUid: string, 
+  mediaFile: { 
+    uri: string; 
+    type: string;
+    name: string;
+  }, 
+  messageType: typeof CometChat.MESSAGE_TYPE.IMAGE | 
+               typeof CometChat.MESSAGE_TYPE.VIDEO | 
+               typeof CometChat.MESSAGE_TYPE.AUDIO,
+  parentMessageId: string
+): Promise<ChatMessage> => {
+  try {
+    console.log(`Sending media thread message: type=${messageType}, uri=${mediaFile.uri}, parentMessageId=${parentMessageId}`);
+    
+    // Create a media message
+    const mediaMessage = new CometChat.MediaMessage(
+      receiverUid,
+      mediaFile,
+      messageType,
+      CometChat.RECEIVER_TYPE.USER
+    );
+    
+    // Set parent message ID
+    mediaMessage.setParentMessageId(parseInt(parentMessageId));
+    
+    // For videos, set some metadata to help with playback
+    if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+      mediaMessage.setMetadata({
+        fileType: 'video/mp4',
+        playable: true
+      });
+    }
+    
+    // Send the media message
+    const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+    console.log("Media thread message sent successfully:", sentMessage);
+    
+    const attachment = (sentMessage as CometChat.MediaMessage).getAttachment();
+    console.log("Attachment details:", attachment ? {
+      url: attachment.getUrl(),
+      type: attachment.getMimeType(),
+      name: attachment.getName()
+    } : "No attachment");
+    
+    // Set message text based on type
+    let messageText = '';
+    if (messageType === CometChat.MESSAGE_TYPE.IMAGE) {
+      messageText = 'Image';
+    } else if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+      messageText = 'Video';
+    } else if (messageType === CometChat.MESSAGE_TYPE.AUDIO) {
+      messageText = 'Audio';
+    } else {
+      messageText = 'Media';
+    }
+    
+    return {
+      id: sentMessage.getId().toString(),
+      text: messageText,
+      sender: {
+        uid: sentMessage.getSender().getUid(),
+        name: sentMessage.getSender().getName(),
+        avatar: sentMessage.getSender().getAvatar()
+      },
+      sentAt: sentMessage.getSentAt(),
+      type: sentMessage.getType(),
+      status: 'sent',
+      parentMessageId: sentMessage.getParentMessageId()?.toString(),
+      attachment: attachment ? {
+        url: attachment.getUrl(),
+        type: attachment.getMimeType(),
+        name: messageType === CometChat.MESSAGE_TYPE.VIDEO ? 'video.mp4' : mediaFile.name
+      } : undefined
+    };
+  } catch (error) {
+    console.error("Error sending media thread message:", error);
+    throw error;
+  }
 }; 

@@ -8,10 +8,18 @@ export interface ChatMessage {
   };
   sentAt: number;
   type: string;
-  status: 'sent' | 'delivered' | 'read';
+  status: 'sent' | 'delivered' | 'seen';
   editedAt?: number;
   editedBy?: string;
   reactions?: Reaction[];
+  attachment?: {
+    url: string;
+    type: string;
+    name: string;
+  };
+  parentMessageId?: string;
+  threadCount?: number;
+  isThreaded?: boolean;
 }
 
 export interface Reaction {

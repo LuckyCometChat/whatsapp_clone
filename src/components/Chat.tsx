@@ -41,6 +41,7 @@ import {
   formatDateHeading,
   markMessagesAsRead
 } from './ChatUtils';
+import ThreadedChat from './ThreadedChat';
 
 interface ChatProps {
   currentUser: User;
@@ -68,6 +69,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const [showAttachmentOptions, setShowAttachmentOptions] = useState(false);
   const [mediaPreview, setMediaPreview] = useState<{ uri: string; type: string } | null>(null);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
+  const [showThread, setShowThread] = useState(false);
+  const [threadParentMessage, setThreadParentMessage] = useState<ChatMessage | null>(null);
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
@@ -177,34 +180,46 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           const senderId = textMessage.getSender().getUid();
           const receiver = textMessage.getReceiver() as CometChat.User;
           const receiverId = receiver.getUid();
+          const parentMessageId = textMessage.getParentMessageId();
 
           if (
             (senderId === selectedUser.uid && receiverId === currentUser.uid) ||
             (senderId === currentUser.uid && receiverId === selectedUser.uid)
           ) {
-            if (textMessage.getData().text !== "") {
-              const convertedMessage: ChatMessage = {
-                id: textMessage.getId().toString(),
-                text: textMessage.getText(),
-                sender: {
-                  uid: textMessage.getSender().getUid(),
-                  name: textMessage.getSender().getName(),
-                  avatar: textMessage.getSender().getAvatar()
-                },
-                sentAt: textMessage.getSentAt(),
-                type: textMessage.getType(),
-                status: 'sent',
-                reactions: []
-              };
-              setMessages(prevMessages => [...prevMessages, convertedMessage]);
+            if (parentMessageId) {
+              setMessages(prevMessages =>
+                prevMessages.map(msg => {
+                  if (msg.id === parentMessageId.toString()) {
+                    return {
+                      ...msg,
+                      threadCount: (msg.threadCount || 0) + 1
+                    };
+                  }
+                  return msg;
+                })
+              );
+            } else {
+              if (textMessage.getData().text !== "") {
+                const convertedMessage: ChatMessage = {
+                  id: textMessage.getId().toString(),
+                  text: textMessage.getText(),
+                  sender: {
+                    uid: textMessage.getSender().getUid(),
+                    name: textMessage.getSender().getName(),
+                    avatar: textMessage.getSender().getAvatar()
+                  },
+                  sentAt: textMessage.getSentAt(),
+                  type: textMessage.getType(),
+                  status: 'sent',
+                  reactions: []
+                };
+                setMessages(prevMessages => [...prevMessages, convertedMessage]);
+              }
             }
           }
 
           if (receiverId === currentUser.uid) {
-          
             CometChat.markAsDelivered(textMessage);
-
-       
             setTimeout(() => {
               CometChat.markAsRead(textMessage);
             }, 100);
@@ -215,58 +230,69 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           const senderId = mediaMessage.getSender().getUid();
           const receiver = mediaMessage.getReceiver() as CometChat.User;
           const receiverId = receiver.getUid();
+          const parentMessageId = mediaMessage.getParentMessageId();
 
           if (
             (senderId === selectedUser.uid && receiverId === currentUser.uid) ||
             (senderId === currentUser.uid && receiverId === selectedUser.uid)
           ) {
-            const attachment = mediaMessage.getAttachment();
-            console.log("Media message received with attachment:", attachment ? {
-              url: attachment.getUrl(),
-              type: attachment.getMimeType(),
-              name: attachment.getName()
-            } : "No attachment");
-            
-            
-            let messageText = 'Media';
-            if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.IMAGE) {
-              messageText = 'Image';
-            } else if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO) {
-              messageText = 'Video';
-            } else if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.AUDIO) {
-              messageText = 'Audio';
-            }
-            
-            const convertedMessage: ChatMessage = {
-              id: mediaMessage.getId().toString(),
-              text: messageText,
-              sender: {
-                uid: mediaMessage.getSender().getUid(),
-                name: mediaMessage.getSender().getName(),
-                avatar: mediaMessage.getSender().getAvatar()
-              },
-              sentAt: mediaMessage.getSentAt(),
-              type: mediaMessage.getType(),
-              status: 'sent',
-              reactions: [],
-              attachment: attachment ? {
+            if (parentMessageId) {
+              setMessages(prevMessages =>
+                prevMessages.map(msg => {
+                  if (msg.id === parentMessageId.toString()) {
+                    return {
+                      ...msg,
+                      threadCount: (msg.threadCount || 0) + 1
+                    };
+                  }
+                  return msg;
+                })
+              );
+            } else {
+              const attachment = mediaMessage.getAttachment();
+              console.log("Media message received with attachment:", attachment ? {
                 url: attachment.getUrl(),
                 type: attachment.getMimeType(),
-                name: mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO 
-                      ? 'video.mp4' 
-                      : (attachment.getName() || 'media')
-              } : undefined
-            };
-            
-            console.log("Converted media message:", convertedMessage);
-            setMessages(prevMessages => [...prevMessages, convertedMessage]);
+                name: attachment.getName()
+              } : "No attachment");
+              
+              let messageText = 'Media';
+              if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.IMAGE) {
+                messageText = 'Image';
+              } else if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO) {
+                messageText = 'Video';
+              } else if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.AUDIO) {
+                messageText = 'Audio';
+              }
+              
+              const convertedMessage: ChatMessage = {
+                id: mediaMessage.getId().toString(),
+                text: messageText,
+                sender: {
+                  uid: mediaMessage.getSender().getUid(),
+                  name: mediaMessage.getSender().getName(),
+                  avatar: mediaMessage.getSender().getAvatar()
+                },
+                sentAt: mediaMessage.getSentAt(),
+                type: mediaMessage.getType(),
+                status: 'sent',
+                reactions: [],
+                attachment: attachment ? {
+                  url: attachment.getUrl(),
+                  type: attachment.getMimeType(),
+                  name: mediaMessage.getType() === CometChat.MESSAGE_TYPE.VIDEO 
+                        ? 'video.mp4' 
+                        : (attachment.getName() || 'media')
+                } : undefined
+              };
+              
+              console.log("Converted media message:", convertedMessage);
+              setMessages(prevMessages => [...prevMessages, convertedMessage]);
+            }
           }
 
           if (receiverId === currentUser.uid) {
-            // First mark as delivered (will show double gray check)
             CometChat.markAsDelivered(mediaMessage);
-
-            // Then mark as read (will show double blue check) - with a small delay
             setTimeout(() => {
               CometChat.markAsRead(mediaMessage);
             }, 500);
@@ -390,6 +416,16 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     }
   };
 
+  const handleThreadUpdate = (messageId: string, newThreadCount: number) => {
+    setMessages(prevMessages => 
+      prevMessages.map(msg => 
+        msg.id === messageId
+          ? { ...msg, threadCount: newThreadCount }
+          : msg
+      )
+    );
+  };
+
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
     const isSentByMe = item.sender.uid === currentUser.uid;
     const messageTime = formatMessageTime(item.sentAt);
@@ -403,6 +439,8 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     const showDateHeading =
       index === 0 ||
       formatDateHeading(item.sentAt) !== formatDateHeading(messages[index - 1].sentAt);
+  
+    const hasThreads = item.threadCount !== undefined && item.threadCount > 0;
   
     return (
       <>
@@ -419,6 +457,14 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             styles.messageWrapper,
             isSentByMe ? styles.sentMessageWrapper : styles.receivedMessageWrapper,
           ]}
+          activeOpacity={0.8}
+          delayLongPress={200}
+          onPress={() => {
+            if (hasThreads) {
+              setThreadParentMessage(item);
+              setShowThread(true);
+            }
+          }}
         >
           {!isSentByMe && (
             <View style={styles.avatarContainer}>
@@ -476,32 +522,21 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                       />
                     )}
                     {item.type === CometChat.MESSAGE_TYPE.VIDEO && item.attachment?.url && (
-  <>
-    {playingVideo === item.id ? (
-      <View style={styles.videoContainer}>
-        <Video
-          source={{ uri: item.attachment.url }}
-          style={styles.videoPlayer}
-          controls={true}
-          resizeMode="contain"
-          onEnd={() => setPlayingVideo(null)}
-        />
-      </View>
-    ) : (
-      <TouchableOpacity 
-        style={styles.videoContainer}
-        onPress={() => setPlayingVideo(item.id)}
-      >
-        <View style={styles.videoPlaceholder}>
-          {/* <Icon name="videocam-outline" size={40} color="#075E54" /> */}
-          <Text style={{ fontSize: 30 }}>▶️</Text>
-          <Text style={styles.videoText}>Video Message</Text>
-        </View>
-        {/* <Icon name="play-circle-outline" size={30} color="#075E54" style={styles.playButton} /> */}
-      </TouchableOpacity>
-    )}
-  </>
-)}
+                      <TouchableOpacity
+                        onPress={() => {
+                          setPlayingVideo(item.id);
+                        }}
+                      >
+                        <Video
+                          source={{ uri: item.attachment.url }}
+                          style={styles.videoPlayer}
+                          controls={true}
+                          resizeMode="contain"
+                          paused={playingVideo !== item.id}
+                          onLoad={() => console.log("Video loaded")}
+                        />
+                      </TouchableOpacity>
+                    )}
                     {item.type === CometChat.MESSAGE_TYPE.AUDIO && item.attachment?.url && (
                       <View style={styles.audioContainer}>
                         <Icon name="musical-notes-outline" size={24} color="#075E54" />
@@ -535,6 +570,19 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                       <Text style={styles.editedText}>edited</Text>
                     )}
                   </View>
+                )}
+                {hasThreads && (
+                  <TouchableOpacity 
+                    style={styles.threadCountContainer}
+                    onPress={() => {
+                      setThreadParentMessage(item);
+                      setShowThread(true);
+                    }}
+                  >
+                    <Text style={styles.threadCountText}>
+                      {item.threadCount} {item.threadCount === 1 ? 'reply' : 'replies'}
+                    </Text>
+                  </TouchableOpacity>
                 )}
                 {renderReactions(item)}
               </>
@@ -621,6 +669,18 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           >
             <Text style={styles.optionText}>React</Text>
           </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.optionButton}
+            onPress={() => {
+              setShowMessageOptions(false);
+              if (selectedMessage) {
+                setThreadParentMessage(selectedMessage);
+                setShowThread(true);
+              }
+            }}
+          >
+            <Text style={styles.optionText}>Reply</Text>
+          </TouchableOpacity>
           {selectedMessage?.sender.uid === currentUser.uid && (
             <>
               <TouchableOpacity 
@@ -701,28 +761,24 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             style={styles.attachmentOption}
             onPress={() => handleCameraPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            {/* <Icon name="camera-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Camera</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
             onPress={() => handleGalleryPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            {/* <Icon name="images-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Gallery</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
             onPress={() => handleAudioPress(handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            {/* <Icon name="musical-notes-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Audio</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.attachmentOption}
             onPress={() => handleVideoPress(setMediaPreview, handleSendMediaMessageWrapper, setShowAttachmentOptions)}
           >
-            {/* <Icon name="videocam-outline" size={24} color="#075E54" /> */}
             <Text style={styles.attachmentText}>Video</Text>
           </TouchableOpacity>
         </View>
@@ -784,6 +840,22 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       {renderMessageOptions()}
       {renderAttachmentOptions()}
       {renderReactionPicker()}
+      {showThread && threadParentMessage && (
+        <Modal
+          visible={showThread}
+          animationType="slide"
+          onRequestClose={() => setShowThread(false)}
+        >
+          <ThreadedChat
+            currentUser={currentUser}
+            selectedUser={selectedUser}
+            parentMessage={threadParentMessage}
+            onClose={() => setShowThread(false)}
+            onThreadUpdate={handleThreadUpdate}
+            userStatuses={userStatuses}
+          />
+        </Modal>
+      )}
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
@@ -793,7 +865,6 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             style={styles.attachButton}
             onPress={handleAttachmentPress}
           >
-            {/* <Icon name="add-circle-outline" size={24} color="#128C7E" /> */}
             <Text style={{ fontSize: 20, color: "#128C7E" }}>📎</Text>
           </TouchableOpacity>
           <TextInput
@@ -1279,6 +1350,18 @@ const styles = StyleSheet.create({
   deletedMessageText: {
     color: '#666',
     fontStyle: 'italic',
+  },
+  threadCountContainer: {
+    marginTop: 2,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 10,
+  },
+  threadCountText: {
+    fontSize: 12,
+    color: '#007AFF',
   },
 });
 
