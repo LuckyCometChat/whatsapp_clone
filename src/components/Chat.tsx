@@ -665,6 +665,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                         onPress={() => {
                           setPlayingVideo(item.id);
                         }}
+                        style={styles.videoContainer}
                       >
                         <Video
                           source={{ uri: item.attachment.url }}
@@ -674,6 +675,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
                           paused={playingVideo !== item.id}
                           onLoad={() => console.log("Video loaded")}
                         />
+                        {playingVideo !== item.id && (
+                          <View style={styles.playButtonOverlay}>
+                            <Text style={{ fontSize: 30 }}>▶️</Text>
+                          </View>
+                        )}
                       </TouchableOpacity>
                     )}
                     {item.type === CometChat.MESSAGE_TYPE.AUDIO && item.attachment?.url && (
@@ -1339,34 +1345,26 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  videoPlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#2c3e50',
+  videoPlayer: {
+    width: 200,
+    height: 150,
     borderRadius: 8,
   },
-  videoThumbnail: {
-    width: '100%',
-    height: '100%',
-    opacity: 0.7,
-  },
-  playButton: {
+  playButtonOverlay: {
     position: 'absolute',
-    color: '#fff',
-    fontSize: 40,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
   },
   audioContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
     backgroundColor: '#f0f0f0',
-    borderRadius: 8,
-  },
-  videoPlayer: {
-    width: 200,
-    height: 150,
     borderRadius: 8,
   },
   audioText: {
