@@ -201,13 +201,13 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           }
 
           if (receiverId === currentUser.uid) {
-            // First mark as delivered (will show double gray check)
+          
             CometChat.markAsDelivered(textMessage);
 
-            // Then mark as read (will show double blue check) - with a small delay
+       
             setTimeout(() => {
               CometChat.markAsRead(textMessage);
-            }, 500);
+            }, 100);
           }
         },
 
@@ -227,7 +227,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
               name: attachment.getName()
             } : "No attachment");
             
-            // Set appropriate text based on media type
+            
             let messageText = 'Media';
             if (mediaMessage.getType() === CometChat.MESSAGE_TYPE.IMAGE) {
               messageText = 'Image';
