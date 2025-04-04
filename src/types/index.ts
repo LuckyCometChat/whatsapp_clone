@@ -49,4 +49,5 @@ export interface ChatMessage {
   parentMessageId?: string;
   threadCount?: number;
   isThreaded?: boolean;
+  isDeleted?: boolean;
 } 

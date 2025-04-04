@@ -133,13 +133,40 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
 
     const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
       const messageId = deletedMessage.getId().toString(); 
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === messageId
-            ? { ...msg, text: "This message was deleted" }
-            : msg
-        )
-      );
+      const parentMessageId = deletedMessage.getParentMessageId()?.toString();
+      
+      if (parentMessageId) {
+        // This is a thread message being deleted
+        setMessages(prevMessages => 
+          prevMessages.map(msg => {
+            // Update the parent message's thread count
+            if (msg.id === parentMessageId) {
+              // Force a refresh of thread count by querying the number of active thread messages
+              // This ensures the count is accurate for both sender and receiver
+              const newThreadCount = Math.max(0, (msg.threadCount || 0) - 1);
+              console.log(`Thread message deleted: updating count for message ${parentMessageId} to ${newThreadCount}`);
+              return {
+                ...msg,
+                threadCount: newThreadCount
+              };
+            }
+            // Also mark the deleted message if it's in our message list
+            if (msg.id === messageId) {
+              return { ...msg, text: "This message was deleted", isDeleted: true };
+            }
+            return msg;
+          })
+        );
+      } else {
+        // This is a regular message being deleted (not a thread message)
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageId
+              ? { ...msg, text: "This message was deleted", isDeleted: true }
+              : msg
+          )
+        );
+      }
     });
 
     const unsubscribeEdit = subscribeToMessageEdit((editedMessage) => {
@@ -187,12 +214,19 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             (senderId === currentUser.uid && receiverId === selectedUser.uid)
           ) {
             if (parentMessageId) {
+              // Check if message is a "thread deleted" notification
+              const isDeletedMessage = textMessage.getText() === "This message was deleted";
+              
               setMessages(prevMessages =>
                 prevMessages.map(msg => {
                   if (msg.id === parentMessageId.toString()) {
+                    // If it's a deleted message, don't increment the thread count
+                    // Otherwise, increment as normal
                     return {
                       ...msg,
-                      threadCount: (msg.threadCount || 0) + 1
+                      threadCount: isDeletedMessage 
+                        ? (msg.threadCount || 0) // Keep the count the same
+                        : (msg.threadCount || 0) + 1 // Increment for new messages
                     };
                   }
                   return msg;
@@ -417,6 +451,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   };
 
   const handleThreadUpdate = (messageId: string, newThreadCount: number) => {
+    console.log(`Thread update for message ${messageId}: setting count to ${newThreadCount}`);
+    
+    // Immediately update the count in the UI
     setMessages(prevMessages => 
       prevMessages.map(msg => 
         msg.id === messageId
@@ -424,6 +461,19 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           : msg
       )
     );
+    
+    // Explicitly request that all clients refresh their thread count
+    // This is critical to ensure both sender and receiver see the same count
+    setTimeout(() => {
+      // After a slight delay, update again to ensure UI consistency
+      setMessages(prevMessages => 
+        prevMessages.map(msg => 
+          msg.id === messageId
+            ? { ...msg, threadCount: newThreadCount }
+            : msg
+        )
+      );
+    }, 300);
   };
 
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {

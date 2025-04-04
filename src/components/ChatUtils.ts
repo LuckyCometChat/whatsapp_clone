@@ -222,7 +222,8 @@ export const convertCometChatMessageToChat = (msg: CometChat.BaseMessage): ChatM
       reactions: reactions,
       parentMessageId: parentMessageId ? parentMessageId.toString() : undefined,
       threadCount: threadCount,
-      isThreaded: parentMessageId !== undefined
+      isThreaded: parentMessageId !== undefined,
+      isDeleted: isDeleted
     };
   } catch (msgError) {
     console.error("Error converting individual message:", msgError);
@@ -424,13 +425,28 @@ export const handleDeleteMessage = async (
         onPress: async () => {
           try {
             await deleteMessage(selectedMessage.id);
-            setMessages(prevMessages => 
-              prevMessages.map(msg => 
-                msg.id === selectedMessage.id 
-                  ? { ...msg, text: "This message was deleted" }
-                  : msg
-              )
-            );
+            
+            setMessages(prevMessages => {
+              const updatedMessages = prevMessages.map(msg => {
+                // Mark the deleted message
+                if (msg.id === selectedMessage.id) {
+                  return { ...msg, text: "This message was deleted", isDeleted: true };
+                }
+                
+                // If this is a thread message, update the parent message's thread count
+                if (selectedMessage.parentMessageId && msg.id === selectedMessage.parentMessageId) {
+                  return {
+                    ...msg,
+                    threadCount: Math.max(0, (msg.threadCount || 0) - 1)
+                  };
+                }
+                
+                return msg;
+              });
+              
+              return updatedMessages;
+            });
+            
             Alert.alert("Success", "Message deleted successfully");
           } catch (error: any) {
             console.error("Error deleting message:", error);
