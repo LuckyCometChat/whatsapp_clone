@@ -365,6 +365,34 @@ export const subscribeToReactions = (callback: (message: CometChat.BaseMessage) 
   };
 };
 
+export const getThreadMessageCount = async (parentMessageId: string): Promise<number> => {
+  try {
+    // Create a messages request for thread messages with the given parent ID
+    const messagesRequest = new CometChat.MessagesRequestBuilder()
+      .setParentMessageId(parseInt(parentMessageId))
+      .setLimit(100) // Set a high limit to get a reasonably accurate count
+      .build();
+    
+    // Fetch the thread messages
+    const threadMessages = await messagesRequest.fetchPrevious();
+    
+    // Return the count of thread messages
+    if (Array.isArray(threadMessages)) {
+      // Filter out deleted messages if needed
+      const activeThreads = threadMessages.filter(message => 
+        !(message.getDeletedAt && message.getDeletedAt())
+      );
+      console.log(`Thread count for message ${parentMessageId}: ${activeThreads.length}`);
+      return activeThreads.length;
+    }
+    
+    return 0;
+  } catch (error) {
+    console.error(`Error fetching thread count for message ${parentMessageId}:`, error);
+    return 0; // Return 0 on error
+  }
+};
+
 export const sendMediaMessage = async (
   receiverUid: string, 
   mediaFile: { 

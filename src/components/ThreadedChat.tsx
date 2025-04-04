@@ -80,28 +80,28 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
   const debouncedTypingIndicator = useRef<NodeJS.Timeout | null>(null);
   const reactionListenerRef = useRef<string | null>(null);
   
-  // Track unique users in thread
+ 
   const [threadParticipants, setThreadParticipants] = useState<string[]>([]);
 
   useEffect(() => {
     loadThreadMessages();
     
-    // Setup thread message listener
+
     threadListenerRef.current = subscribeToThreadMessages(parentMessage.id, (message) => {
       try {
         const convertedMessage = convertCometChatMessageToChat(message);
         if (convertedMessage) {
           setThreadMessages(prevMessages => [...prevMessages, convertedMessage]);
-          // Update thread count in parent chat
+     
           onThreadUpdate(parentMessage.id, (parentMessage.threadCount || 0) + 1);
           
-          // Add sender to participants if not already included
+      
           const senderId = convertedMessage.sender.uid;
           setThreadParticipants(prev => 
             prev.includes(senderId) ? prev : [...prev, senderId]
           );
           
-          // Scroll to bottom when new message arrives
+  
           if (flatListRef.current) {
             setTimeout(() => {
               flatListRef.current?.scrollToEnd({ animated: true });
@@ -113,10 +113,10 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
       }
     });
     
-    // Setup user status listener for selected user
+    
     setupUserStatusListener(selectedUser.uid);
     
-    // Setup typing listener
+ 
     const typingListenerId = `thread_typing_listener_${parentMessage.id}`;
     CometChat.addMessageListener(
       typingListenerId,
@@ -136,7 +136,7 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
       })
     );
     
-    // Subscribe to message edits
+
     const unsubscribeEdit = subscribeToMessageEdit((editedMessage) => {
       setThreadMessages(prevMessages => 
         prevMessages.map(msg => 
@@ -152,34 +152,32 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
       );
     });
     
-    // Subscribe to message deletions
+
     const unsubscribeDeletion = subscribeToMessageDeletion((deletedMessage) => {
       const messageId = deletedMessage.getId().toString(); 
       
-      // Check if this is a thread message (has parent ID matching our thread)
+
       const isThreadMessage = deletedMessage.getParentMessageId()?.toString() === parentMessage.id;
       
-      // Update the thread messages state
+  
       setThreadMessages(prevMessages => {
-        // Filter out deleted messages for accurate count
         const updatedMessages = prevMessages.map(msg => 
           msg.id === messageId
             ? { ...msg, text: "This message was deleted", isDeleted: true }
             : msg
         );
         
-        // Count actual messages (excluding deleted ones)
+ 
         const activeMessageCount = updatedMessages.filter(msg => !msg.isDeleted).length;
         
-        // Always update thread count in parent chat with current accurate count
-        // This fixes the issue where the sender still sees "1 reply" after deletion
+
         onThreadUpdate(parentMessage.id, activeMessageCount);
         
         return updatedMessages;
       });
     });
     
-    // Setup reaction listener
+
     reactionListenerRef.current = 'thread_reaction_listener';
     CometChat.addMessageListener(
       reactionListenerRef.current,
@@ -200,28 +198,28 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
         threadListenerRef.current();
       }
       
-      // Clean up all status listeners
+ 
       Object.keys(statusListenerRefs.current).forEach(uid => {
         if (statusListenerRefs.current[uid]) {
           statusListenerRefs.current[uid]();
         }
       });
       
-      // Remove typing listener
+
       CometChat.removeMessageListener(typingListenerId);
       
-      // Remove edit and deletion listeners
+
       unsubscribeEdit();
       unsubscribeDeletion();
       
-      // Remove reaction listener
+
       if (reactionListenerRef.current) {
         CometChat.removeMessageListener(reactionListenerRef.current);
       }
     };
   }, [parentMessage.id, selectedUser.uid]);
 
-  // Update all statuses if provided from props
+  
   useEffect(() => {
     console.log("userStatuses updated:", userStatuses);
     setLocalUserStatuses(prev => ({...prev, ...userStatuses}));
@@ -876,7 +874,7 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
       {renderMessageOptions()}
       {renderReactionPicker()}
       
-      <View style={styles.divider} />
+      <View  />
       
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -912,7 +910,7 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#E4DDD6', // WhatsApp chat background color
+    backgroundColor: '#E4DDD6', 
     marginTop: Platform.OS === 'android' ? 10 : 0,
   },
   header: {
@@ -1087,17 +1085,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#f0f0f0',
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#D8D8D8',
-    width: '100%'
-  },
+
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 15,
     paddingVertical: 10,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: '',
     marginBottom: Platform.OS === "android" ? 20 : 0,
   },
   chatInput: {

@@ -17,7 +17,7 @@ import {
   PermissionsAndroid,
   Linking
 } from 'react-native';
-import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded, sendMediaMessage } from '../services/cometChat';
+import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded, sendMediaMessage, getThreadMessageCount } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage, Reaction } from '../types/index';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 import * as ImagePicker from 'react-native-image-picker';
@@ -141,10 +141,25 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           prevMessages.map(msg => {
             // Update the parent message's thread count
             if (msg.id === parentMessageId) {
-              // Force a refresh of thread count by querying the number of active thread messages
-              // This ensures the count is accurate for both sender and receiver
+              // When a thread message is deleted, decrement the thread count
               const newThreadCount = Math.max(0, (msg.threadCount || 0) - 1);
               console.log(`Thread message deleted: updating count for message ${parentMessageId} to ${newThreadCount}`);
+              
+              // Fetch the real thread count from CometChat to ensure accuracy
+              getThreadMessageCount(parentMessageId).then(realCount => {
+                console.log(`Fetched real thread count for message ${parentMessageId}: ${realCount}`);
+                // Update with real count in a new state update
+                setMessages(currentMessages => 
+                  currentMessages.map(currentMsg => 
+                    currentMsg.id === parentMessageId 
+                      ? { ...currentMsg, threadCount: realCount }
+                      : currentMsg
+                  )
+                );
+              }).catch(err => {
+                console.error("Error fetching thread count:", err);
+              });
+              
               return {
                 ...msg,
                 threadCount: newThreadCount
@@ -195,6 +210,34 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
         onMessageReactionRemoved: (reactionEvent: CometChat.ReactionEvent) => {
           console.log("Reaction removed:", reactionEvent.getReaction());
           updateReactions(reactionEvent, CometChat.REACTION_ACTION.REACTION_REMOVED, currentUser, setMessages);
+        },
+        onMessagesDelivered: (messageReceipt: CometChat.MessageReceipt) => {
+          const messageId = messageReceipt.getMessageId().toString();
+          setMessages(prevMessages =>
+            prevMessages.map(msg => {
+              if (msg.id === messageId) {
+                return {
+                  ...msg,
+                  status: 'delivered'
+                };
+              }
+              return msg;
+            })
+          );
+        },
+        onMessagesRead: (messageReceipt: CometChat.MessageReceipt) => {
+          const messageId = messageReceipt.getMessageId().toString();
+          setMessages(prevMessages =>
+            prevMessages.map(msg => {
+              if (msg.id === messageId) {
+                return {
+                  ...msg,
+                  status: 'seen'
+                };
+              }
+              return msg;
+            })
+          );
         }
       })
     );
@@ -379,6 +422,24 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       if (messageListenerRef.current) {
         CometChat.removeMessageListener(messageListenerRef.current);
       }
+      
+      // Clean up typing timeouts
+      if (debouncedTypingIndicator.current) {
+        clearTimeout(debouncedTypingIndicator.current);
+        debouncedTypingIndicator.current = null;
+      }
+      
+      if (typingEndTimeoutRef.current) {
+        clearTimeout(typingEndTimeoutRef.current);
+        typingEndTimeoutRef.current = null;
+      }
+      
+      // Ensure typing indicator is stopped when navigating away
+      if (selectedUser && selectedUser.uid) {
+        typeMessageEnded(selectedUser.uid).catch(error => {
+          console.error("Error ending typing on unmount:", error);
+        });
+      }
     };
   }, [selectedUser, currentUser.uid, onUserStatusChange]);
 
@@ -423,14 +484,31 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   };
 
   const debouncedTypingIndicator = useRef<NodeJS.Timeout | null>(null);
+  const typingEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const handleTyping = () => {
     if (debouncedTypingIndicator.current) {
       clearTimeout(debouncedTypingIndicator.current);
     }
     
+    // Clear the typing end timeout if it exists
+    if (typingEndTimeoutRef.current) {
+      clearTimeout(typingEndTimeoutRef.current);
+    }
+    
     debouncedTypingIndicator.current = setTimeout(async () => {
       try {
         await typeMessageStarted(selectedUser.uid);
+        
+        // Set a timeout to automatically end typing after 5 seconds if no new input
+        typingEndTimeoutRef.current = setTimeout(async () => {
+          try {
+            await typeMessageEnded(selectedUser.uid);
+          } catch (error) {
+            console.error("Error auto-ending typing indicator:", error);
+          }
+        }, 5000);
+        
       } catch (error) {
         console.error("Error starting typing indicator:", error);
       }
@@ -441,6 +519,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
     if (debouncedTypingIndicator.current) {
       clearTimeout(debouncedTypingIndicator.current);
       debouncedTypingIndicator.current = null;
+    }
+    
+    if (typingEndTimeoutRef.current) {
+      clearTimeout(typingEndTimeoutRef.current);
+      typingEndTimeoutRef.current = null;
     }
     
     try {
@@ -462,18 +545,24 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       )
     );
     
-    // Explicitly request that all clients refresh their thread count
-    // This is critical to ensure both sender and receiver see the same count
-    setTimeout(() => {
-      // After a slight delay, update again to ensure UI consistency
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === messageId
-            ? { ...msg, threadCount: newThreadCount }
-            : msg
-        )
-      );
-    }, 300);
+    // Get the real thread count to ensure accuracy across clients
+    getThreadMessageCount(messageId)
+      .then(realCount => {
+        console.log(`Got real thread count for ${messageId}: ${realCount}`);
+        // After a slight delay, update again with real count to ensure UI consistency
+        setTimeout(() => {
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === messageId
+                ? { ...msg, threadCount: realCount }
+                : msg
+            )
+          );
+        }, 300);
+      })
+      .catch(error => {
+        console.error("Error getting real thread count:", error);
+      });
   };
 
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
