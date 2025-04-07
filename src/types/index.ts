@@ -40,14 +40,18 @@ export interface ChatMessage {
   status: 'sent' | 'delivered' | 'seen';
   editedAt?: number;
   editedBy?: string;
-  reactions?: Reaction[];
+  isDeleted?: boolean;
   attachment?: {
     url: string;
     type: string;
     name: string;
   };
-  parentMessageId?: string;
+  reactions?: {
+    emoji: string;
+    count: number;
+    reactedByMe: boolean;
+  }[];
   threadCount?: number;
-  isThreaded?: boolean;
-  isDeleted?: boolean;
+  parentMessageId?: string;
+  isLocalOnly?: boolean;
 } 

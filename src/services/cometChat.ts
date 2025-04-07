@@ -270,9 +270,16 @@ export const subscribeToUserStatus = (uid: string, callback: (status: 'online' |
 
 export const deleteMessage = async (messageId: string): Promise<void> => {
   try {
-    await CometChat.deleteMessage(messageId);
+    // Convert messageId to integer to ensure compatibility with CometChat SDK
+    const parsedId = parseInt(messageId);
+    if (isNaN(parsedId)) {
+      throw new Error(`Invalid message ID format: ${messageId}`);
+    }
+    console.log("Deleting message with parsed ID:", parsedId);
+    // Using explicit string conversion since CometChat.deleteMessage expects string
+    await CometChat.deleteMessage(parsedId.toString());
   } catch (error) {
-    console.error("Error deleting message:", error);
+    console.error(`Error deleting message with ID ${messageId}:`, error);
     throw error;
   }
 };
@@ -640,6 +647,547 @@ export const sendMediaThreadMessage = async (
     };
   } catch (error) {
     console.error("Error sending media thread message:", error);
+    throw error;
+  }
+};
+
+// Group Chat Functions
+export const createGroup = async (groupName: string, groupType: typeof CometChat.GROUP_TYPE.PUBLIC | typeof CometChat.GROUP_TYPE.PRIVATE | typeof CometChat.GROUP_TYPE.PASSWORD, password?: string, description?: string): Promise<any> => {
+  try {
+    const group = new CometChat.Group(
+      Date.now().toString(),
+      groupName,
+      groupType,
+      password
+    );
+    
+    if (description) {
+      group.setDescription(description);
+    }
+    
+    return await CometChat.createGroup(group);
+  } catch (error) {
+    console.error("Error creating group:", error);
+    throw error;
+  }
+};
+
+export const fetchGroups = async () => {
+  try {
+    const groupsRequest = new CometChat.GroupsRequestBuilder()
+      .setLimit(30)
+      .build();
+    
+    return await groupsRequest.fetchNext();
+  } catch (error) {
+    console.error("Error fetching groups:", error);
+    throw error;
+  }
+};
+
+export const joinGroup = async (guid: string, groupType: typeof CometChat.GROUP_TYPE.PUBLIC | typeof CometChat.GROUP_TYPE.PRIVATE | typeof CometChat.GROUP_TYPE.PASSWORD, password?: string) => {
+  try {
+    const group = new CometChat.Group(guid, "", groupType, password);
+    return await CometChat.joinGroup(group);
+  } catch (error) {
+    console.error("Error joining group:", error);
+    throw error;
+  }
+};
+
+export const leaveGroup = async (guid: string) => {
+  try {
+    return await CometChat.leaveGroup(guid);
+  } catch (error) {
+    console.error("Error leaving group:", error);
+    throw error;
+  }
+};
+
+export const fetchGroupMembers = async (guid: string) => {
+  try {
+    const membersRequest = new CometChat.GroupMembersRequestBuilder(guid)
+      .setLimit(30)
+      .build();
+    
+    return await membersRequest.fetchNext();
+  } catch (error) {
+    console.error("Error fetching group members:", error);
+    throw error;
+  }
+};
+
+export const addMembersToGroup = async (guid: string, membersList: Array<{ uid: string, role?: string }>) => {
+  try {
+    // Convert the member list to match CometChat expected format
+    const members = membersList.map(member => {
+      const groupMember = new CometChat.GroupMember(member.uid, member.role || CometChat.GROUP_MEMBER_SCOPE.PARTICIPANT);
+      return groupMember;
+    });
+    
+    return await CometChat.addMembersToGroup(guid, members, []);
+  } catch (error) {
+    console.error("Error adding members to group:", error);
+    throw error;
+  }
+};
+
+export const removeMembersFromGroup = async (guid: string, membersList: string[]) => {
+  try {
+    // CometChat expects separate calls for each member to be removed
+    const promises = membersList.map(uid => CometChat.kickGroupMember(guid, uid));
+    return await Promise.all(promises);
+  } catch (error) {
+    console.error("Error removing members from group:", error);
+    throw error;
+  }
+};
+
+export const blockGroupMembers = async (guid: string, membersList: string[]) => {
+  try {
+    // CometChat expects separate calls for each member to be blocked
+    const promises = membersList.map(uid => CometChat.banGroupMember(guid, uid));
+    return await Promise.all(promises);
+  } catch (error) {
+    console.error("Error blocking group members:", error);
+    throw error;
+  }
+};
+
+export const unblockGroupMembers = async (guid: string, membersList: string[]) => {
+  try {
+    // CometChat expects separate calls for each member to be unblocked
+    const promises = membersList.map(uid => CometChat.unbanGroupMember(guid, uid));
+    return await Promise.all(promises);
+  } catch (error) {
+    console.error("Error unblocking group members:", error);
+    throw error;
+  }
+};
+
+export const fetchGroupMessages = async (guid: string) => {
+  try {
+    if (!guid) {
+      console.error("Invalid group GUID provided to fetchGroupMessages:", guid);
+      return [];
+    }
+    
+    const messagesRequest = new CometChat.MessagesRequestBuilder()
+      .setGUID(guid)
+      .setLimit(50)
+      .build();
+    
+    const messages = await messagesRequest.fetchPrevious();
+    
+    if (!messages || !Array.isArray(messages)) {
+      console.warn("fetchGroupMessages: No messages returned or invalid format");
+      return [];
+    }
+    
+    return messages;
+  } catch (error) {
+    console.error("Error fetching group messages:", error);
+    // Return empty array instead of throwing to prevent app crashes
+    return [];
+  }
+};
+
+export const sendGroupMessage = async (guid: string, message: string): Promise<ChatMessage> => {
+  try {
+    const textMessage = new CometChat.TextMessage(
+      guid,
+      message,
+      CometChat.RECEIVER_TYPE.GROUP
+    );
+    
+    const sentMessage = await CometChat.sendMessage(textMessage);
+   
+    return {
+      id: sentMessage.getId().toString(),
+      text: (sentMessage as CometChat.TextMessage).getText(),
+      sender: {
+        uid: sentMessage.getSender().getUid(),
+        name: sentMessage.getSender().getName(),
+        avatar: sentMessage.getSender().getAvatar()
+      },
+      sentAt: sentMessage.getSentAt(),
+      type: sentMessage.getType(),
+      status: 'sent'
+    };
+  } catch (error) {
+    console.error("Error sending group message:", error);
+    throw error;
+  }
+};
+
+export const editGroupMessage = async (messageId: string, message: string): Promise<ChatMessage> => {
+  try {
+    // First get the original message to ensure it exists
+    const parsedId = parseInt(messageId);
+    if (isNaN(parsedId)) {
+      throw new Error(`Invalid message ID format: ${messageId}`);
+    }
+    
+    console.log("Getting message before editing:", parsedId);
+    // Get the message first to verify it exists using our own function
+    const originalMessage = await getMessageById(messageId);
+    if (!originalMessage) {
+      throw new Error(`Message with ID ${messageId} not found`);
+    }
+    
+    // Create a text message for editing
+    const textMessage = new CometChat.TextMessage(
+      originalMessage.getReceiverId(),
+      message,
+      CometChat.RECEIVER_TYPE.GROUP
+    );
+    
+    // Set the ID and other required properties
+    textMessage.setId(parsedId);
+    
+    // Edit the message
+    const editedMessage = await CometChat.editMessage(textMessage);
+    
+    console.log("Message edited successfully:", editedMessage.getId());
+
+    return {
+      id: editedMessage.getId().toString(),
+      text: (editedMessage as CometChat.TextMessage).getText(),
+      sender: {
+        uid: editedMessage.getSender().getUid(),
+        name: editedMessage.getSender().getName(),
+        avatar: editedMessage.getSender().getAvatar()
+      },
+      sentAt: editedMessage.getSentAt(),
+      type: editedMessage.getType(),
+      status: 'sent'
+    };
+  } catch (error) {
+    console.error(`Error editing group message with ID ${messageId}:`, error);
+    throw error;
+  }
+};
+
+export const sendGroupMediaMessage = async (
+  guid: string, 
+  mediaFile: { 
+    uri: string; 
+    type: string;
+    name: string;
+  }, 
+  messageType: typeof CometChat.MESSAGE_TYPE.IMAGE | 
+               typeof CometChat.MESSAGE_TYPE.VIDEO | 
+               typeof CometChat.MESSAGE_TYPE.AUDIO |
+               typeof CometChat.MESSAGE_TYPE.FILE
+): Promise<ChatMessage> => {
+  try {
+    console.log(`Sending group media message: type=${messageType}, uri=${mediaFile.uri}`);
+    
+    // Create a media message
+    const mediaMessage = new CometChat.MediaMessage(
+      guid,
+      mediaFile,
+      messageType,
+      CometChat.RECEIVER_TYPE.GROUP
+    );
+    
+    // For videos, set some metadata to help with playback
+    if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+      mediaMessage.setMetadata({
+        fileType: 'video/mp4',
+        playable: true
+      });
+    }
+    
+    // Send the media message with proper error handling
+    try {
+      const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+      console.log("Group media message sent successfully:", sentMessage);
+      
+      const attachment = (sentMessage as CometChat.MediaMessage).getAttachment();
+      console.log("Group attachment details:", attachment ? {
+        url: attachment.getUrl(),
+        type: attachment.getMimeType(),
+        name: attachment.getName()
+      } : "No attachment");
+      
+      // Set message text based on type
+      let messageText = '';
+      if (messageType === CometChat.MESSAGE_TYPE.IMAGE) {
+        messageText = 'Image';
+      } else if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+        messageText = 'Video';
+      } else if (messageType === CometChat.MESSAGE_TYPE.AUDIO) {
+        messageText = 'Audio';
+      } else if (messageType === CometChat.MESSAGE_TYPE.FILE) {
+        messageText = 'File';
+      } else {
+        messageText = 'Media';
+      }
+      
+      // Get metadata safely using any type to avoid TypeScript errors
+      // for CometChat SDK methods that are not properly typed
+      const metadata = (sentMessage as any).getMetadata ? (sentMessage as any).getMetadata() : undefined;
+      const reactions = metadata?.reactions;
+      
+      let formattedReactions: {emoji: string; count: number; reactedByMe: boolean}[] = [];
+      
+      // Only process reactions if they exist
+      if (reactions && typeof reactions === 'object') {
+        try {
+          formattedReactions = Object.entries(reactions).map(([emoji, users]) => {
+            // Ensure users is an object before using Object.keys
+            const userObj = users as Record<string, any>;
+            
+            // Get current user carefully
+            let currentUserId = '';
+            try {
+              const currentUser = CometChat.getLoggedinUser();
+              if (currentUser) {
+                currentUserId = currentUser.getUid();
+              }
+            } catch (error) {
+              console.error("Error getting current user:", error);
+            }
+            
+            return {
+              emoji,
+              count: Object.keys(userObj).length,
+              reactedByMe: currentUserId ? Object.keys(userObj).includes(currentUserId) : false
+            };
+          });
+        } catch (error) {
+          console.error("Error formatting reactions:", error);
+        }
+      }
+      
+      return {
+        id: sentMessage.getId().toString(),
+        text: messageText,
+        sender: {
+          uid: sentMessage.getSender().getUid(),
+          name: sentMessage.getSender().getName(),
+          avatar: sentMessage.getSender().getAvatar()
+        },
+        sentAt: sentMessage.getSentAt(),
+        type: sentMessage.getType(),
+        status: 'sent',
+        reactions: formattedReactions,
+        attachment: attachment ? {
+          url: attachment.getUrl(),
+          type: attachment.getMimeType(),
+          name: messageType === CometChat.MESSAGE_TYPE.VIDEO ? 'video.mp4' : mediaFile.name
+        } : undefined
+      };
+    } catch (innerError) {
+      console.error("Error during CometChat.sendMediaMessage:", innerError);
+      throw innerError;
+    }
+  } catch (error) {
+    console.error("Error sending group media message:", error);
+    throw error;
+  }
+};
+
+export const typeGroupMessageStarted = async (guid: string) => {
+  try {
+    const typingIndicator = new CometChat.TypingIndicator(
+      guid,
+      CometChat.RECEIVER_TYPE.GROUP
+    );
+    CometChat.startTyping(typingIndicator);
+  } catch (error) {
+    console.error("Error starting group typing indicator:", error);
+    throw error;
+  }
+};
+
+export const typeGroupMessageEnded = async (guid: string) => {
+  try {
+    const typingIndicator = new CometChat.TypingIndicator(
+      guid,
+      CometChat.RECEIVER_TYPE.GROUP
+    );
+    CometChat.endTyping(typingIndicator);
+  } catch (error) {
+    console.error("Error ending group typing indicator:", error);
+    throw error;
+  }
+};
+
+export const subscribeToGroupMessages = (guid: string, callback: (message: CometChat.BaseMessage) => void) => {
+  const listenerID = `group_message_listener_${guid}`;
+  
+  CometChat.addMessageListener(
+    listenerID,
+    new CometChat.MessageListener({
+      onTextMessageReceived: (message: CometChat.TextMessage) => {
+        if (message.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP && 
+            message.getReceiverId() === guid) {
+          console.log("Group text message received:", message);
+          callback(message);
+        }
+      },
+      onMediaMessageReceived: (message: CometChat.MediaMessage) => {
+        if (message.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP && 
+            message.getReceiverId() === guid) {
+          console.log("Group media message received:", message);
+          const attachment = message.getAttachment();
+          if (attachment) {
+            // Convert media message to include attachment
+            (message as any).attachment = {
+              url: attachment.getUrl(),
+              type: attachment.getMimeType(),
+              name: message.getType() === CometChat.MESSAGE_TYPE.IMAGE ? 'image.jpg' :
+                    message.getType() === CometChat.MESSAGE_TYPE.VIDEO ? 'video.mp4' :
+                    'audio.mp3'
+            };
+          }
+          callback(message);
+        }
+      },
+      onError: (error: CometChat.CometChatException) => {
+        console.error("Group message listener error:", error);
+      }
+    })
+  );
+
+  return () => {
+    CometChat.removeMessageListener(listenerID);
+    console.log("Group message listener removed:", listenerID);
+  };
+};
+
+export const subscribeToGroupTyping = (guid: string, callback: (user: CometChat.User, isTyping: boolean) => void) => {
+  const listenerID = `group_typing_listener_${guid}`;
+  
+  CometChat.addMessageListener(
+    listenerID,
+    new CometChat.MessageListener({
+      onTypingStarted: (typingIndicator: CometChat.TypingIndicator) => {
+        if (typingIndicator.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP && 
+            typingIndicator.getReceiverId() === guid) {
+          callback(typingIndicator.getSender(), true);
+        }
+      },
+      onTypingEnded: (typingIndicator: CometChat.TypingIndicator) => {
+        if (typingIndicator.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP && 
+            typingIndicator.getReceiverId() === guid) {
+          callback(typingIndicator.getSender(), false);
+        }
+      }
+    })
+  );
+
+  return () => {
+    CometChat.removeMessageListener(listenerID);
+  };
+};
+
+// Improve the getMessageById function to properly handle message metadata
+export const getMessageById = async (messageId: string) => {
+  try {
+    console.log("Getting message by ID:", messageId);
+    // Use type assertion to inform TypeScript that the method exists
+    const parsedId = parseInt(messageId);
+    // Use the CometChat SDK method with type assertion
+    return await (CometChat as any).getMessageById(parsedId);
+  } catch (error) {
+    console.error("Error getting message by ID:", error);
+    throw error;
+  }
+};
+
+// Enhance updateMessage to properly handle metadata
+export const updateMessage = async (message: CometChat.BaseMessage) => {
+  try {
+    console.log("Updating message:", message.getId());
+    // Use type assertion to inform TypeScript that the method exists
+    return await (CometChat as any).updateMessage(message);
+  } catch (error) {
+    console.error("Error updating message:", error);
+    throw error;
+  }
+};
+
+// Add a reactionToMessage function to manage reactions more directly
+export const addReactionToMessage = async (messageId: string, emoji: string, uid: string, name: string) => {
+  try {
+    // First get the message
+    const message = await getMessageById(messageId);
+    if (!message) throw new Error("Message not found");
+    
+    // Get or create metadata
+    let metadata: Record<string, any> = {};
+    try {
+      if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
+        const existingMetadata = (message as any).getMetadata();
+        if (existingMetadata) metadata = existingMetadata;
+      }
+    } catch (error) {
+      console.warn("Error getting metadata, creating new:", error);
+    }
+    
+    // Add the reaction
+    if (!metadata.reactions) metadata.reactions = {};
+    if (!metadata.reactions[emoji]) metadata.reactions[emoji] = {};
+    
+    metadata.reactions[emoji][uid] = { name };
+    
+    // Set the metadata back
+    if ((message as any).setMetadata) {
+      (message as any).setMetadata(metadata);
+      return await updateMessage(message);
+    } else {
+      throw new Error("Message doesn't support metadata");
+    }
+  } catch (error) {
+    console.error("Error adding reaction:", error);
+    throw error;
+  }
+};
+
+// Function to remove a reaction
+export const removeReactionFromMessage = async (messageId: string, emoji: string, uid: string) => {
+  try {
+    // First get the message
+    const message = await getMessageById(messageId);
+    if (!message) throw new Error("Message not found");
+    
+    // Get metadata
+    let metadata: Record<string, any> = {};
+    try {
+      if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
+        const existingMetadata = (message as any).getMetadata();
+        if (existingMetadata) metadata = existingMetadata;
+      }
+    } catch (error) {
+      console.warn("Error getting metadata:", error);
+      return null; // No metadata to modify
+    }
+    
+    // Remove the reaction if it exists
+    if (metadata.reactions && 
+        metadata.reactions[emoji] && 
+        metadata.reactions[emoji][uid]) {
+      
+      delete metadata.reactions[emoji][uid];
+      
+      // Remove empty reaction
+      if (Object.keys(metadata.reactions[emoji]).length === 0) {
+        delete metadata.reactions[emoji];
+      }
+      
+      // Set the metadata back
+      if ((message as any).setMetadata) {
+        (message as any).setMetadata(metadata);
+        return await updateMessage(message);
+      }
+    }
+    
+    return null; // No reaction to remove
+  } catch (error) {
+    console.error("Error removing reaction:", error);
     throw error;
   }
 }; 

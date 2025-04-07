@@ -13,10 +13,13 @@ import {
 import { fetchUsers, logoutCometChat, subscribeToUserStatus } from '../services/cometChat';
 import { User, CometChatUser } from '../types/index';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 interface UserListProps {
   onUserSelect: (user: User) => void;
   onLogout: () => void;
+  userStatuses: { [key: string]: 'online' | 'offline' };
+  onGroupsPress: () => void;
 }
 
 interface UserWithStatus extends User {
@@ -25,7 +28,7 @@ interface UserWithStatus extends User {
   unreadCount: number;
 }
 
-const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
+const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout, userStatuses, onGroupsPress }) => {
   const [users, setUsers] = useState<UserWithStatus[]>([]);
   const unsubscribeFunctions = React.useRef<{ [key: string]: () => void }>({});
   const messageListenerRef = React.useRef<string | null>(null);
@@ -220,9 +223,14 @@ const UserList: React.FC<UserListProps> = ({ onUserSelect, onLogout }) => {
       <StatusBar backgroundColor="#075E54" barStyle="light-content" />
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Chats</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity onPress={onGroupsPress} style={styles.groupsButton}>
+            <Text style={styles.buttonText}>Groups</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
+            <Text style={styles.buttonText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <FlatList
         data={users}
@@ -258,10 +266,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
   },
-  logoutButton: {
-    padding: 8,
+  headerButtons: {
+    flexDirection: 'row',
   },
-  logoutButtonText: {
+  groupsButton: {
+    marginRight: 15,
+  },
+  logoutButton: {
+    marginLeft: 5,
+  },
+  buttonText: {
     color: 'white',
     fontSize: 16,
   },

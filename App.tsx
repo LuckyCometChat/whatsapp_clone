@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { initCometChat } from './src/services/cometChat';
-import { User } from './src/types';
+import { User, Group } from './src/types';
 import Login from './src/components/Login';
 import UserList from './src/components/UserList';
 import Chat from './src/components/Chat';
+import GroupList from './src/components/GroupList';
+import GroupChat from './src/components/GroupChat';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 
 const App = () => {
@@ -13,6 +15,8 @@ const App = () => {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [userStatuses, setUserStatuses] = useState<{ [key: string]: 'online' | 'offline' }>({});
   const userStatusListenerRef = useRef<string | null>(null);
+  const [showGroups, setShowGroups] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
 
   useEffect(() => {
     const initializeApp = async () => {
@@ -96,28 +100,44 @@ const App = () => {
     setIsLoggedIn(false);
     setCurrentUser(null);
     setSelectedUser(null);
+    setSelectedGroup(null);
+    setShowGroups(false);
     setUserStatuses({});
   };
 
   const handleUserSelect = (user: User) => {
     setSelectedUser(user);
+    setSelectedGroup(null);
   };
 
-  const handleBack = () => {
+  const handleGroupSelect = (group: Group) => {
+    setSelectedGroup(group);
     setSelectedUser(null);
   };
 
-  return (
-    <View style={styles.container}>
-      {!isLoggedIn ? (
-        <Login onLogin={handleLogin} />
-      ) : !selectedUser ? (
-        <UserList 
-          onUserSelect={handleUserSelect} 
-          onLogout={handleLogout}
-          userStatuses={userStatuses}
-        />
-      ) : (
+  const handleBack = () => {
+    if (selectedUser) {
+      setSelectedUser(null);
+    } else if (selectedGroup) {
+      setSelectedGroup(null);
+    } else if (showGroups) {
+      setShowGroups(false);
+    }
+  };
+
+  const toggleView = () => {
+    setShowGroups(!showGroups);
+    setSelectedUser(null);
+    setSelectedGroup(null);
+  };
+
+  const renderContent = () => {
+    if (!isLoggedIn) {
+      return <Login onLogin={handleLogin} />;
+    }
+
+    if (selectedUser) {
+      return (
         <Chat
           currentUser={currentUser!}
           selectedUser={selectedUser}
@@ -130,7 +150,42 @@ const App = () => {
             }));
           }}
         />
-      )}
+      );
+    }
+
+    if (selectedGroup) {
+      return (
+        <GroupChat
+          currentUser={currentUser!}
+          selectedGroup={selectedGroup}
+          onBack={handleBack}
+        />
+      );
+    }
+
+    if (showGroups) {
+      return (
+        <GroupList
+          onGroupSelect={handleGroupSelect}
+          onBack={toggleView}
+          currentUser={currentUser!}
+        />
+      );
+    }
+
+    return (
+      <UserList 
+        onUserSelect={handleUserSelect}
+        onLogout={handleLogout}
+        userStatuses={userStatuses}
+        onGroupsPress={toggleView}
+      />
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      {renderContent()}
     </View>
   );
 };
