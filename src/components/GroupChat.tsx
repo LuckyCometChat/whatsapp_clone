@@ -25,6 +25,7 @@ import {
   deleteMessage,
   subscribeToMessageDeletion,
   subscribeToMessageEdit,
+  subscribeToReactions,
   typeGroupMessageStarted,
   typeGroupMessageEnded,
   sendGroupMediaMessage,
@@ -34,7 +35,13 @@ import {
   getMessageById,
   updateMessage,
   addReactionToMessage,
-  removeReactionFromMessage
+  removeReactionFromMessage,
+  leaveGroup,
+  deleteGroup,
+  removeMembersFromGroup,
+  addMembersToGroup,
+  subscribeToGroupEvents,
+  fetchUsers
 } from '../services/cometChat';
 import { Group, User, ChatMessage, GroupMember } from '../types';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
@@ -71,6 +78,13 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isPicking, setIsPicking] = useState<boolean>(false);
+  const [showAddMembersModal, setShowAddMembersModal] = useState<boolean>(false);
+  const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [memberToKick, setMemberToKick] = useState<GroupMember | null>(null);
+  const [showConfirmation, setShowConfirmation] = useState<boolean>(false);
+  const [confirmationAction, setConfirmationAction] = useState<'leave' | 'delete' | 'kick' | null>(null);
   
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -78,6 +92,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
   const typingListenerRef = useRef<() => void | null>(null);
   const deletionListenerRef = useRef<() => void | null>(null);
   const editListenerRef = useRef<() => void | null>(null);
+  const reactionListenerRef = useRef<() => void | null>(null);
+  const groupEventsListenerRef = useRef<() => void | null>(null);
 
   useEffect(() => {
     loadMessages();
@@ -91,12 +107,13 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       if (typingListenerRef.current) typingListenerRef.current();
       if (deletionListenerRef.current) deletionListenerRef.current();
       if (editListenerRef.current) editListenerRef.current();
+      if (reactionListenerRef.current) reactionListenerRef.current();
+      if (groupEventsListenerRef.current) groupEventsListenerRef.current();
     };
   }, [selectedGroup.guid]);
 
   useEffect(() => {
     console.log("CometChat API methods check");
-    // Ensure we're using the right methods
     import('../services/cometChat').then(cometChatService => {
       console.log("CometChat service methods available:", {
         getMessageById: !!cometChatService.getMessageById,
@@ -110,10 +127,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       const fetchedMessages = await fetchGroupMessages(selectedGroup.guid);
       
       if (Array.isArray(fetchedMessages)) {
-        // Filter out action messages first
         const filteredMessages = fetchedMessages.filter(message => {
           try {
-            // Skip action messages
             if ((message as any).getCategory && (message as any).getCategory() === "action") {
               console.log("Skipping action message");
               return false;
@@ -126,10 +141,15 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         });
         
         const formattedMessages: LocalChatMessage[] = filteredMessages.map(message => {
-          // Get metadata safely using any type to avoid TypeScript errors
           let metadata;
           try {
-            metadata = (message as any).getMetadata ? (message as any).getMetadata() : undefined;
+            if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
+              metadata = (message as any).getMetadata();
+              console.log(`Message ${message.getId()} metadata:`, metadata);
+            } else if ((message as any).metadata) {
+              metadata = (message as any).metadata;
+              console.log(`Message ${message.getId()} direct metadata:`, metadata);
+            }
           } catch (error) {
             console.log("Error getting metadata:", error);
             metadata = undefined;
@@ -139,20 +159,25 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           
           let formattedReactions: {emoji: string; count: number; reactedByMe: boolean}[] = [];
           
-          // Only process reactions if they exist
-          if (reactions) {
+          if (reactions && typeof reactions === 'object') {
             try {
               formattedReactions = Object.entries(reactions).map(([emoji, users]) => {
-                // Ensure users is an object before using Object.keys
+                console.log(`Processing reaction ${emoji} with users:`, users);
                 const userObj = users as Record<string, any>;
+                
+          
+                const reactedByMe = Object.keys(userObj).includes(currentUser.uid);
+                
                 return {
                   emoji,
                   count: Object.keys(userObj).length,
-                  reactedByMe: Object.keys(userObj).includes(currentUser.uid)
+                  reactedByMe: reactedByMe
                 };
               });
+              
+              console.log(`Formatted ${formattedReactions.length} reactions for message ${message.getId()}`);
             } catch (error) {
-              console.error("Error formatting reactions:", error);
+              console.error(`Error formatting reactions for message ${message.getId()}:`, error);
             }
           }
           
@@ -241,6 +266,14 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           scope: member.getScope(),
           joinedAt: member.getJoinedAt()
         }));
+        console.log("Fetched group members:", members);
+        
+        // Check if current user is admin
+        const currentMember = members.find(member => member.uid === currentUser.uid);
+        setIsAdmin(
+          currentMember?.scope === CometChat.GROUP_MEMBER_SCOPE.ADMIN || 
+          currentUser.uid === selectedGroup.owner
+        );
         
         setGroupMembers(members);
       }
@@ -571,22 +604,99 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         }
       })
     );
+
+    // Add a reaction listener
+    reactionListenerRef.current = subscribeToReactions((message) => {
+      // Only process for this group
+      if (message.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP &&
+          message.getReceiverId() === selectedGroup.guid) {
+        console.log("Reaction updated for message:", message.getId());
+        
+        // Get metadata for reactions
+        let metadata;
+        try {
+          if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
+            metadata = (message as any).getMetadata();
+            console.log("Reaction metadata:", metadata);
+          } else if ((message as any).metadata) {
+            metadata = (message as any).metadata;
+          }
+        } catch (error) {
+          console.error("Error getting metadata from reaction callback:", error);
+          return;
+        }
+        
+        // Format reactions
+        const reactions = metadata?.reactions;
+        if (!reactions) {
+          console.log("No reactions in metadata");
+          return;
+        }
+        
+        let formattedReactions: {emoji: string; count: number; reactedByMe: boolean}[] = [];
+        try {
+          formattedReactions = Object.entries(reactions).map(([emoji, users]) => {
+            // Ensure users is an object before using Object.keys
+            const userObj = users as Record<string, any>;
+            return {
+              emoji,
+              count: Object.keys(userObj).length,
+              reactedByMe: Object.keys(userObj).includes(currentUser.uid)
+            };
+          });
+        } catch (error) {
+          console.error("Error formatting reactions in reaction callback:", error);
+          return;
+        }
+        
+        // Update the message in state
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === message.getId().toString()
+              ? {
+                  ...msg,
+                  reactions: formattedReactions
+                }
+              : msg
+          )
+        );
+      }
+    });
+
+    // Set up group events listener
+    groupEventsListenerRef.current = subscribeToGroupEvents((action, message, userUid, groupGuid) => {
+      console.log(`Group action: ${action} by user: ${userUid} in group: ${groupGuid}`);
+      
+      // Only handle events for current group
+      if (groupGuid === selectedGroup.guid) {
+        // Reload group members when membership changes
+        if (['joined', 'left', 'kicked', 'banned', 'unbanned', 'added', 'changed'].includes(action)) {
+          loadGroupMembers();
+        }
+        
+        // Handle if current user is kicked from group
+        if (action === 'kicked' && userUid === currentUser.uid) {
+          Alert.alert(
+            "Removed from Group",
+            "You have been removed from this group.",
+            [{ text: "OK", onPress: onBack }]
+          );
+        }
+      }
+    });
   };
   
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
     
     try {
-      // End typing indicator
       endTyping();
-      
-      // Send the message
       const sentMessage = await sendGroupMessage(selectedGroup.guid, newMessage.trim());
       console.log("Group message sent:", sentMessage);
       
-      // Create a local copy of the message to immediately display
+      
       const localMessage: LocalChatMessage = {
-        id: Date.now().toString(), // Temporary ID
+        id: Date.now().toString(), 
         text: newMessage.trim(),
         sender: {
           uid: currentUser.uid,
@@ -598,12 +708,9 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         status: 'sent',
         reactions: []
       };
-      
-      // Add message to state immediately
+
       setMessages(prevMessages => [...prevMessages, localMessage]);
       setNewMessage('');
-      
-      // Scroll to bottom
       if (flatListRef.current) {
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
@@ -621,26 +728,25 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     setIsLoading(true);
     
     try {
-      // Create temporary edited message for local display
+      
       const localEditedMessage = {
         ...editingMessage,
         text: editText.trim(),
         editedAt: Date.now()
       };
       
-      // Update local state immediately for responsive UI
+     
       setMessages(prevMessages => 
         prevMessages.map(msg => 
           msg.id === editingMessage.id ? localEditedMessage : msg
         )
       );
       
-      // Clear editing state
+      
       setEditingMessage(null);
       setEditText('');
       
       console.log(`Attempting to edit message with ID: ${editingMessage.id}`);
-      // Actual API call
       try {
         await editGroupMessage(editingMessage.id, editText.trim());
         console.log(`Successfully edited message with ID: ${editingMessage.id}`);
@@ -675,7 +781,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     try {
       console.log(`Attempting to delete message with ID: ${messageId}`);
       
-      // Update UI immediately
+    
       setMessages(prevMessages => 
         prevMessages.map(msg => 
           msg.id === messageId
@@ -684,7 +790,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         )
       );
       
-      // Make the API call
+  
       try {
         await deleteMessage(messageId);
         console.log(`Successfully deleted message with ID: ${messageId}`);
@@ -698,8 +804,6 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     } catch (error) {
       console.error(`Error in handleDeleteMessage for message ID ${messageId}:`, error);
       Alert.alert("Error", "Failed to delete message. Please try again.");
-      
-      // Reload messages to restore state on error
       loadMessages();
     } finally {
       setIsLoading(false);
@@ -789,9 +893,9 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     if (isLoading) return;
     
     setIsLoading(true);
+    console.log(`Adding reaction ${emoji} to message ${messageId}`);
     
     try {
-      // Update local state for immediate feedback
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
@@ -799,14 +903,12 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             const existingIndex = updatedReactions.findIndex(r => r.emoji === emoji);
             
             if (existingIndex >= 0) {
-              // Update existing reaction
               updatedReactions[existingIndex] = {
                 ...updatedReactions[existingIndex],
                 count: updatedReactions[existingIndex].count + 1,
                 reactedByMe: true
               };
             } else {
-              // Add new reaction
               updatedReactions.push({
                 emoji,
                 count: 1,
@@ -823,17 +925,24 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         })
       );
       
-      // Use the new service function
+     
       try {
-        await addReactionToMessage(messageId, emoji, currentUser.uid, currentUser.name);
+        console.log(`Calling addReactionToMessage service with messageId: ${messageId}, emoji: ${emoji}`);
+        const result = await addReactionToMessage(messageId, emoji, currentUser.uid, currentUser.name);
+        console.log("Reaction added successfully, result:", result);
+        setTimeout(() => {
+          loadMessages();
+        }, 1000);
       } catch (apiError) {
-        console.warn("API error when adding reaction, using local state only:", apiError);
+        console.error(`API error when adding reaction ${emoji} to message ${messageId}:`, apiError);
+        if (apiError instanceof Error) {
+          console.log("Error message:", apiError.message);
+          console.log("Error stack:", apiError.stack);
+        }
       }
     } catch (error) {
-      console.error("Error adding reaction:", error);
+      console.error("Error in handleAddReaction:", error);
       Alert.alert("Error", "Failed to add reaction. Please try again.");
-      
-      // Revert local change on error
       loadMessages();
     } finally {
       setIsLoading(false);
@@ -845,9 +954,9 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     if (isLoading) return;
     
     setIsLoading(true);
+    console.log(`Removing reaction ${emoji} from message ${messageId}`);
     
     try {
-      // Update local state for immediate feedback
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
@@ -871,14 +980,27 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         })
       );
       
-      // Use the new service function
+     
       try {
-        await removeReactionFromMessage(messageId, emoji, currentUser.uid);
+        console.log(`Calling removeReactionFromMessage service with messageId: ${messageId}, emoji: ${emoji}`);
+        const result = await removeReactionFromMessage(messageId, emoji, currentUser.uid);
+        console.log("Reaction removed successfully, result:", result);
+        
+      
+        setTimeout(() => {
+          loadMessages();
+        }, 1000);
       } catch (apiError) {
-        console.warn("API error when removing reaction, using local state only:", apiError);
+        console.error(`API error when removing reaction ${emoji} from message ${messageId}:`, apiError);
+        
+      
+        if (apiError instanceof Error) {
+          console.log("Error message:", apiError.message);
+          console.log("Error stack:", apiError.stack);
+        }
       }
     } catch (error) {
-      console.error("Error removing reaction:", error);
+      console.error("Error in handleRemoveReaction:", error);
       Alert.alert("Error", "Failed to remove reaction. Please try again.");
       
       // Reload messages on error
@@ -1030,7 +1152,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     setIsLoading(true);
     
     try {
-      // First, prepare the media file
+
       const uriParts = mediaPreview.uri.split('/');
       const fileName = uriParts[uriParts.length - 1] || `media_${Date.now()}`;
       
@@ -1057,7 +1179,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         messageText = 'File';
       }
       
-      // Create a temporary local message to display immediately
+
       const tempId = `temp_${Date.now()}`;
       const localMessage: LocalChatMessage = {
         id: tempId,
@@ -1353,8 +1475,10 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     );
   };
   
-  const renderReactions = (message: ChatMessage) => {
+  const renderReactions = (message: LocalChatMessage) => {
     if (!message.reactions || message.reactions.length === 0) return null;
+    
+    console.log(`Rendering ${message.reactions.length} reactions for message ${message.id}`);
     
     return (
       <View style={styles.reactionsList}>
@@ -1363,7 +1487,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             key={`${reaction.emoji}_${index}`}
             style={[
               styles.reactionBubble,
-              reaction.reactedByMe && styles.reactedBubble
+              reaction.reactedByMe ? styles.reactedBubble : null
             ]}
             onPress={() => reaction.reactedByMe 
               ? handleRemoveReaction(message.id, reaction.emoji)
@@ -1650,6 +1774,42 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
              'Password Protected Group'}
           </Text>
           
+          <View style={styles.groupActionsContainer}>
+            {isAdmin && (
+              <TouchableOpacity 
+                style={styles.groupAction}
+                onPress={() => setShowAddMembersModal(true)}
+              >
+                <View style={styles.groupActionIcon}>
+                  <Text>👥</Text>
+                </View>
+                <Text style={styles.groupActionText}>Add People</Text>
+              </TouchableOpacity>
+            )}
+            
+            {isAdmin ? (
+              <TouchableOpacity 
+                style={styles.groupAction}
+                onPress={() => showConfirmationDialog('delete')}
+              >
+                <View style={styles.groupActionIcon}>
+                  <Text style={{ color: 'red', fontSize: 16 }}>🗑️ </Text>
+                </View>
+                <Text style={[styles.groupActionText, { color: 'red' }]}>Delete Group</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={styles.groupAction}
+                onPress={() => showConfirmationDialog('leave')}
+              >
+                <View style={styles.groupActionIcon}>
+                  <Text>❌</Text>
+                </View>
+                <Text style={styles.groupActionText}>Leave Group</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
           <Text style={styles.groupInfoMembersTitle}>
             {`${groupMembers.length} Members`}
           </Text>
@@ -1682,6 +1842,14 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                 {item.uid === currentUser.uid && (
                   <Text style={styles.youLabel}>You</Text>
                 )}
+                {isAdmin && item.uid !== currentUser.uid && (
+                  <TouchableOpacity 
+                    style={styles.kickButton}
+                    onPress={() => showConfirmationDialog('kick', item)}
+                  >
+                    <Text style={styles.kickButtonText}>Remove</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           />
@@ -1689,6 +1857,277 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       </SafeAreaView>
     </Modal>
   );
+
+  const handleLeaveGroup = async () => {
+    setShowConfirmation(false);
+    setIsLoading(true);
+    
+    try {
+      await leaveGroup(selectedGroup.guid);
+      Alert.alert(
+        "Success",
+        "You have left the group.",
+        [{ text: "OK", onPress: onBack }]
+      );
+    } catch (error) {
+      console.error("Error leaving group:", error);
+      Alert.alert("Error", "Failed to leave the group. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleDeleteGroup = async () => {
+    setShowConfirmation(false);
+    setIsLoading(true);
+    
+    try {
+      await deleteGroup(selectedGroup.guid);
+      Alert.alert(
+        "Success",
+        "Group has been deleted.",
+        [{ text: "OK", onPress: onBack }]
+      );
+    } catch (error) {
+      console.error("Error deleting group:", error);
+      Alert.alert("Error", "Failed to delete the group. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const handleKickMember = async () => {
+    if (!memberToKick) return;
+    
+    setShowConfirmation(false);
+    setIsLoading(true);
+    
+    try {
+      await removeMembersFromGroup(selectedGroup.guid, [memberToKick.uid]);
+      Alert.alert("Success", `${memberToKick.name} has been removed from the group.`);
+      loadGroupMembers();
+    } catch (error) {
+      console.error("Error kicking member:", error);
+      Alert.alert("Error", "Failed to remove member from the group. Please try again.");
+    } finally {
+      setIsLoading(false);
+      setMemberToKick(null);
+    }
+  };
+  
+  const handleAddMembers = async () => {
+    if (selectedUsers.length === 0) {
+      setShowAddMembersModal(false);
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      // Format users for API
+      const members = selectedUsers.map(uid => ({ uid }));
+      
+      await addMembersToGroup(selectedGroup.guid, members);
+      Alert.alert("Success", "Members have been added to the group.");
+      loadGroupMembers();
+      setShowAddMembersModal(false);
+      setSelectedUsers([]);
+    } catch (error) {
+      console.error("Error adding members:", error);
+      Alert.alert("Error", "Failed to add members to the group. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const loadAvailableUsers = async () => {
+    setIsLoading(true);
+    try {
+      const users = await fetchUsers();
+      if (Array.isArray(users)) {
+        const formattedUsers: User[] = users.map(user => ({
+          uid: user.getUid(),
+          name: user.getName(),
+          avatar: user.getAvatar()
+        }));
+        setAvailableUsers(formattedUsers);
+      }
+    } catch (error) {
+      console.error("Error loading available users:", error);
+      Alert.alert("Error", "Failed to load users. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const showConfirmationDialog = (action: 'leave' | 'delete' | 'kick', member?: GroupMember) => {
+    if (action === 'kick' && member) {
+      setMemberToKick(member);
+    }
+    
+    setConfirmationAction(action);
+    setShowConfirmation(true);
+  };
+
+  const renderConfirmationModal = () => {
+    let title = '';
+    let message = '';
+    let confirmAction = () => {};
+    
+    switch (confirmationAction) {
+      case 'leave':
+        title = "Leave Group";
+        message = "Are you sure you want to leave this group?";
+        confirmAction = handleLeaveGroup;
+        break;
+      case 'delete':
+        title = "Delete Group";
+        message = "Are you sure you want to delete this group? This action cannot be undone.";
+        confirmAction = handleDeleteGroup;
+        break;
+      case 'kick':
+        title = "Remove Member";
+        message = `Are you sure you want to remove ${memberToKick?.name} from this group?`;
+        confirmAction = handleKickMember;
+        break;
+    }
+    
+    return (
+      <Modal
+        visible={showConfirmation}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowConfirmation(false)}
+      >
+        <View style={styles.confirmationOverlay}>
+          <View style={styles.confirmationContainer}>
+            <Text style={styles.confirmationTitle}>{title}</Text>
+            <Text style={styles.confirmationMessage}>{message}</Text>
+            
+            <View style={styles.confirmationButtons}>
+              <TouchableOpacity 
+                style={[styles.confirmationButton, styles.cancelButton]}
+                onPress={() => setShowConfirmation(false)}
+                disabled={isLoading}
+              >
+                <Text style={styles.confirmationButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.confirmationButton, styles.confirmButton]}
+                onPress={confirmAction}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.confirmationButtonText}>Confirm</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+  
+  const renderAddMembersModal = () => {
+    return (
+      <Modal
+        visible={showAddMembersModal}
+        animationType="slide"
+        onRequestClose={() => setShowAddMembersModal(false)}
+        onShow={loadAvailableUsers}
+      >
+        <SafeAreaView style={styles.addMembersContainer}>
+          <View style={styles.addMembersHeader}>
+            <TouchableOpacity 
+              style={styles.addMembersBackButton}
+              onPress={() => {
+                setShowAddMembersModal(false);
+                setSelectedUsers([]);
+              }}
+              disabled={isLoading}
+            >
+              <Text style={{ fontSize: 24, color: "#075E54" }}>←</Text>
+            </TouchableOpacity>
+            <Text style={styles.addMembersTitle}>Add Members</Text>
+          </View>
+          
+          <View style={styles.addMembersContent}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search users..."
+              placeholderTextColor="#888"
+            />
+            
+            <FlatList
+              data={availableUsers.filter(user => 
+                !groupMembers.some(member => member.uid === user.uid)
+              )}
+              keyExtractor={(item) => item.uid}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.userItem}
+                  onPress={() => {
+                    setSelectedUsers(prev => 
+                      prev.includes(item.uid)
+                        ? prev.filter(uid => uid !== item.uid)
+                        : [...prev, item.uid]
+                    );
+                  }}
+                >
+                  <View style={styles.userAvatar}>
+                    {item.avatar ? (
+                      <Image 
+                        source={{ uri: item.avatar }} 
+                        style={styles.userAvatarImage}
+                      />
+                    ) : (
+                      <Text style={styles.userAvatarText}>
+                        {item.name.charAt(0).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.userName}>{item.name}</Text>
+                  
+                  {selectedUsers.includes(item.uid) && (
+                    <View style={styles.selectedUserCheck}>
+                      <Text style={styles.selectedUserCheckText}>✓</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={() => (
+                <Text style={styles.emptyListText}>
+                  No users available to add
+                </Text>
+              )}
+            />
+          </View>
+          
+          <View style={styles.addMembersFooter}>
+            <TouchableOpacity 
+              style={[
+                styles.addMembersButton,
+                selectedUsers.length === 0 && styles.disabledButton
+              ]}
+              onPress={handleAddMembers}
+              disabled={selectedUsers.length === 0 || isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.addMembersButtonText}>
+                  Add {selectedUsers.length > 0 ? `(${selectedUsers.length})` : ''}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1821,6 +2260,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       {renderReactionPicker()}
       {renderAttachmentOptions()}
       {renderGroupInfo()}
+      {renderConfirmationModal()}
+      {renderAddMembersModal()}
     </SafeAreaView>
   );
 };
@@ -2485,6 +2926,185 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  kickButton: {
+    backgroundColor: '#f8d7da',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  kickButtonText: {
+    color: '#dc3545',
+    fontSize: 12,
+  },
+  
+  groupActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginVertical: 20,
+    paddingHorizontal: 10,
+  },
+  groupAction: {
+    alignItems: 'center',
+    paddingHorizontal: 15,
+  },
+  groupActionIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  groupActionText: {
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  
+  confirmationOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  confirmationContainer: {
+    width: '80%',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+  },
+  confirmationTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  confirmationMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  confirmationButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  confirmationButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#f0f0f0',
+  },
+  confirmButton: {
+    backgroundColor: '#075E54',
+  },
+  confirmationButtonText: {
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  
+  addMembersContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  addMembersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ECE5DD',
+  },
+  addMembersBackButton: {
+    marginRight: 16,
+  },
+  addMembersTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#075E54',
+  },
+  addMembersContent: {
+    flex: 1,
+    padding: 16,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#DCE0E0',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  userItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ECE5DD',
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#075E54',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  userAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  userAvatarText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  userName: {
+    fontSize: 16,
+    flex: 1,
+  },
+  selectedUserCheck: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#075E54',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectedUserCheckText: {
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  emptyListText: {
+    textAlign: 'center',
+    padding: 20,
+    color: '#888',
+  },
+  addMembersFooter: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#ECE5DD',
+  },
+  addMembersButton: {
+    backgroundColor: '#075E54',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  addMembersButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  disabledButton: {
+    backgroundColor: '#C4C4C4',
   },
 });
 

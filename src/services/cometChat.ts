@@ -348,7 +348,7 @@ export const subscribeToMessages = (callback: (message: CometChat.BaseMessage) =
 
 export const subscribeToReactions = (callback: (message: CometChat.BaseMessage) => void) => {
   const listenerID = 'reaction_listener';
-  
+   
   CometChat.addMessageListener(
     listenerID,
     new CometChat.MessageListener({
@@ -700,6 +700,15 @@ export const leaveGroup = async (guid: string) => {
     return await CometChat.leaveGroup(guid);
   } catch (error) {
     console.error("Error leaving group:", error);
+    throw error;
+  }
+};
+
+export const deleteGroup = async (guid: string) => {
+  try {
+    return await CometChat.deleteGroup(guid);
+  } catch (error) {
+    console.error("Error deleting group:", error);
     throw error;
   }
 };
@@ -1088,10 +1097,59 @@ export const subscribeToGroupTyping = (guid: string, callback: (user: CometChat.
 export const getMessageById = async (messageId: string) => {
   try {
     console.log("Getting message by ID:", messageId);
-    // Use type assertion to inform TypeScript that the method exists
+    
+    // Ensure messageId is valid
     const parsedId = parseInt(messageId);
-    // Use the CometChat SDK method with type assertion
-    return await (CometChat as any).getMessageById(parsedId);
+    if (isNaN(parsedId)) {
+      console.error("Invalid message ID format:", messageId);
+      throw new Error(`Invalid message ID format: ${messageId}`);
+    }
+    
+    // Use type assertion to inform TypeScript that the method exists
+    const message = await (CometChat as any).getMessageById(parsedId);
+    
+    // Check if we received a valid message object
+    if (!message) {
+      console.error("No message returned for ID:", messageId);
+      throw new Error(`Message with ID ${messageId} not found`);
+    }
+    
+    // Validate that the message object has the required methods
+    if (typeof message.getId !== 'function') {
+      console.error("Retrieved message doesn't have getId method, indicating an invalid response format");
+      console.log("Message object structure:", JSON.stringify(message, null, 2));
+      
+      // Try to create a valid message object if possible
+      if (message.id) {
+        console.log("Message has id property, attempting to construct a valid message object");
+        
+        // Determine message type and create appropriate message object
+        if (message.type === 'text') {
+          const textMessage = new CometChat.TextMessage(
+            message.receiverId || '',
+            message.text || '',
+            message.receiverType || CometChat.RECEIVER_TYPE.USER
+          );
+          
+          // Set basic properties
+          textMessage.setId(parsedId);
+          if (message.sender) {
+            textMessage.setSender(new CometChat.User(message.sender.uid));
+          }
+          
+          console.log("Created text message object with ID:", textMessage.getId());
+          return textMessage;
+        } else {
+          console.error("Unable to reconstruct message of type:", message.type);
+          throw new Error("Invalid message format returned from CometChat");
+        }
+      } else {
+        throw new Error("Invalid message format returned from CometChat");
+      }
+    }
+    
+    console.log("Successfully retrieved message with ID:", message.getId());
+    return message;
   } catch (error) {
     console.error("Error getting message by ID:", error);
     throw error;
@@ -1101,7 +1159,16 @@ export const getMessageById = async (messageId: string) => {
 // Enhance updateMessage to properly handle metadata
 export const updateMessage = async (message: CometChat.BaseMessage) => {
   try {
-    console.log("Updating message:", message.getId());
+    // Add detailed logging to debug the message object structure
+    console.log("Updating message with ID:", typeof message.getId === 'function' ? message.getId() : 'getId not available');
+    console.log("Message type:", message.getType ? message.getType() : 'getType not available');
+    
+    // Check if message is in the right format before updating
+    if (typeof message.getId !== 'function') {
+      console.error("Message object does not have getId method, cannot update");
+      throw new Error("Invalid message object format");
+    }
+    
     // Use type assertion to inform TypeScript that the method exists
     return await (CometChat as any).updateMessage(message);
   } catch (error) {
@@ -1110,19 +1177,53 @@ export const updateMessage = async (message: CometChat.BaseMessage) => {
   }
 };
 
-// Add a reactionToMessage function to manage reactions more directly
+// Fix the addReactionToMessage function to handle CometChat API better
 export const addReactionToMessage = async (messageId: string, emoji: string, uid: string, name: string) => {
   try {
-    // First get the message
-    const message = await getMessageById(messageId);
-    if (!message) throw new Error("Message not found");
+    console.log(`Adding reaction ${emoji} to message ${messageId} by user ${uid}`);
+    
+    // Parse the message ID to integer
+    const parsedId = parseInt(messageId, 10);
+    if (isNaN(parsedId)) {
+      console.error("Invalid message ID format:", messageId);
+      throw new Error(`Invalid message ID format: ${messageId}`);
+    }
+    
+    // First try to get the message with CometChat's direct method
+    console.log("Attempting to get message with ID:", parsedId);
+    let message;
+    try {
+      message = await CometChat.getMessageById(parsedId);
+      console.log("Message found:", message?.getId());
+    } catch (error) {
+      console.error("Error retrieving message with CometChat.getMessageById:", error);
+      
+      // Fallback: Try to create a message object with the ID
+      // This is needed because sometimes CometChat doesn't find messages by ID
+      try {
+        console.log("Creating fallback message object with ID:", parsedId);
+        message = new CometChat.TextMessage("", "", CometChat.RECEIVER_TYPE.GROUP);
+        message.setId(parsedId);
+      } catch (fallbackError) {
+        console.error("Error creating fallback message:", fallbackError);
+        throw new Error("Could not create valid message object");
+      }
+    }
+    
+    if (!message) {
+      console.error("Message not found and fallback failed");
+      throw new Error("Message not found");
+    }
     
     // Get or create metadata
     let metadata: Record<string, any> = {};
     try {
-      if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
-        const existingMetadata = (message as any).getMetadata();
-        if (existingMetadata) metadata = existingMetadata;
+      if (message.getMetadata && typeof message.getMetadata === 'function') {
+        const existingMetadata = message.getMetadata();
+        console.log("Existing metadata:", existingMetadata);
+        metadata = existingMetadata || {};
+      } else {
+        console.log("Message does not have getMetadata method, creating new metadata");
       }
     } catch (error) {
       console.warn("Error getting metadata, creating new:", error);
@@ -1133,13 +1234,24 @@ export const addReactionToMessage = async (messageId: string, emoji: string, uid
     if (!metadata.reactions[emoji]) metadata.reactions[emoji] = {};
     
     metadata.reactions[emoji][uid] = { name };
+    console.log("Updated metadata with reaction:", metadata);
     
     // Set the metadata back
-    if ((message as any).setMetadata) {
-      (message as any).setMetadata(metadata);
-      return await updateMessage(message);
-    } else {
-      throw new Error("Message doesn't support metadata");
+    try {
+      if (message.setMetadata && typeof message.setMetadata === 'function') {
+        console.log("Setting metadata on message");
+        message.setMetadata(metadata);
+      } else {
+        console.warn("Message doesn't have setMetadata method, using alternative approach");
+        (message as any).metadata = metadata;
+      }
+      
+      // Update the message
+      console.log("Calling CometChat.updateMessage");
+      return await CometChat.updateMessage(message);
+    } catch (metadataError) {
+      console.error("Error setting metadata or updating message:", metadataError);
+      throw metadataError;
     }
   } catch (error) {
     console.error("Error adding reaction:", error);
@@ -1147,19 +1259,53 @@ export const addReactionToMessage = async (messageId: string, emoji: string, uid
   }
 };
 
-// Function to remove a reaction
+// Fix the removeReactionFromMessage function with the same approach
 export const removeReactionFromMessage = async (messageId: string, emoji: string, uid: string) => {
   try {
-    // First get the message
-    const message = await getMessageById(messageId);
-    if (!message) throw new Error("Message not found");
+    console.log(`Removing reaction ${emoji} from message ${messageId} by user ${uid}`);
+    
+    // Parse the message ID to integer
+    const parsedId = parseInt(messageId, 10);
+    if (isNaN(parsedId)) {
+      console.error("Invalid message ID format:", messageId);
+      throw new Error(`Invalid message ID format: ${messageId}`);
+    }
+    
+    // First try to get the message with CometChat's direct method
+    console.log("Attempting to get message with ID:", parsedId);
+    let message;
+    try {
+      message = await CometChat.getMessageById(parsedId);
+      console.log("Message found for reaction removal:", message?.getId());
+    } catch (error) {
+      console.error("Error retrieving message with CometChat.getMessageById:", error);
+      
+      // Fallback: Try to create a message object with the ID
+      try {
+        console.log("Creating fallback message object with ID:", parsedId);
+        message = new CometChat.TextMessage("", "", CometChat.RECEIVER_TYPE.GROUP);
+        message.setId(parsedId);
+      } catch (fallbackError) {
+        console.error("Error creating fallback message:", fallbackError);
+        throw new Error("Could not create valid message object");
+      }
+    }
+    
+    if (!message) {
+      console.error("Message not found and fallback failed");
+      throw new Error("Message not found");
+    }
     
     // Get metadata
     let metadata: Record<string, any> = {};
     try {
-      if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
-        const existingMetadata = (message as any).getMetadata();
-        if (existingMetadata) metadata = existingMetadata;
+      if (message.getMetadata && typeof message.getMetadata === 'function') {
+        const existingMetadata = message.getMetadata();
+        console.log("Existing metadata for reaction removal:", existingMetadata);
+        metadata = existingMetadata || {};
+      } else {
+        console.log("Message does not have getMetadata method");
+        return null; // No metadata to modify
       }
     } catch (error) {
       console.warn("Error getting metadata:", error);
@@ -1172,17 +1318,33 @@ export const removeReactionFromMessage = async (messageId: string, emoji: string
         metadata.reactions[emoji][uid]) {
       
       delete metadata.reactions[emoji][uid];
+      console.log(`Deleted user ${uid} from reaction ${emoji}`);
       
       // Remove empty reaction
       if (Object.keys(metadata.reactions[emoji]).length === 0) {
         delete metadata.reactions[emoji];
+        console.log(`Removed empty reaction ${emoji}`);
       }
       
       // Set the metadata back
-      if ((message as any).setMetadata) {
-        (message as any).setMetadata(metadata);
-        return await updateMessage(message);
+      try {
+        if (message.setMetadata && typeof message.setMetadata === 'function') {
+          console.log("Setting updated metadata after reaction removal");
+          message.setMetadata(metadata);
+        } else {
+          console.warn("Message doesn't have setMetadata method, using alternative approach");
+          (message as any).metadata = metadata;
+        }
+        
+        // Update the message
+        console.log("Calling CometChat.updateMessage for reaction removal");
+        return await CometChat.updateMessage(message);
+      } catch (metadataError) {
+        console.error("Error setting metadata or updating message:", metadataError);
+        throw metadataError;
       }
+    } else {
+      console.log("Reaction not found to remove");
     }
     
     return null; // No reaction to remove
@@ -1190,4 +1352,52 @@ export const removeReactionFromMessage = async (messageId: string, emoji: string
     console.error("Error removing reaction:", error);
     throw error;
   }
+};
+
+export const subscribeToGroupEvents = (callback: (action: string, message: any, userUid?: string, groupGuid?: string) => void) => {
+  const listenerID = `group_action_listener_${Date.now()}`;
+  
+  CometChat.addGroupListener(
+    listenerID,
+    new CometChat.GroupListener({
+      onGroupMemberJoined: (message: any, joinedUser: any, joinedGroup: any) => {
+        console.log("Group member joined:", joinedUser?.getUid());
+        callback('joined', message, joinedUser?.getUid(), joinedGroup?.getGuid());
+      },
+      onGroupMemberLeft: (message: any, leftUser: any, leftGroup: any) => {
+        console.log("Group member left:", leftUser?.getUid());
+        callback('left', message, leftUser?.getUid(), leftGroup?.getGuid());
+      },
+      onGroupMemberKicked: (message: any, kickedUser: any, kickedBy: any, kickedFrom: any) => {
+        console.log("Group member kicked:", kickedUser?.getUid());
+        callback('kicked', message, kickedUser?.getUid(), kickedFrom?.getGuid());
+      },
+      onGroupMemberBanned: (message: any, bannedUser: any, bannedBy: any, bannedFrom: any) => {
+        console.log("Group member banned:", bannedUser?.getUid());
+        callback('banned', message, bannedUser?.getUid(), bannedFrom?.getGuid());
+      },
+      onGroupMemberUnbanned: (message: any, unbannedUser: any, unbannedBy: any, unbannedFrom: any) => {
+        console.log("Group member unbanned:", unbannedUser?.getUid());
+        callback('unbanned', message, unbannedUser?.getUid(), unbannedFrom?.getGuid());
+      },
+      onGroupMemberScopeChanged: (message: any, member: any, changedBy: any, changedFrom: any, newScope: any, oldScope: any) => {
+        console.log("Group member scope changed:", member?.getUid());
+        callback('scopeChanged', message, member?.getUid(), changedFrom?.getGuid());
+      },
+      onMemberAddedToGroup: (message: any, userAdded: any, userAddedBy: any, userAddedIn: any) => {
+        console.log("Member added to group:", userAdded?.getUid());
+        callback('added', message, userAdded?.getUid(), userAddedIn?.getGuid());
+      },
+      onGroupMemberChanged: (action: any, changedUser: any, changedGroup: any) => {
+        console.log("Group member changed action:", action);
+        console.log("Changed user:", changedUser?.getUid());
+        callback('changed', action, changedUser?.getUid(), changedGroup?.getGuid());
+      },
+    })
+  );
+
+  return () => {
+    CometChat.removeGroupListener(listenerID);
+    console.log("Group action listener removed:", listenerID);
+  };
 }; 
