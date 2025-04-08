@@ -508,10 +508,41 @@ export const sendThreadMessage = async (receiverUid: string, message: string, pa
       sentAt: sentMessage.getSentAt(),
       type: sentMessage.getType(),
       status: 'sent',
-      parentMessageId: sentMessage.getParentMessageId()?.toString()
+      parentMessageId: sentMessage.getParentMessageId() ? sentMessage.getParentMessageId().toString() : undefined
     };
   } catch (error) {
     console.error("Error sending thread message:", error);
+    throw error;
+  }
+};
+
+export const sendGroupThreadMessage = async (groupId: string, message: string, parentMessageId: string): Promise<ChatMessage> => {
+  try {
+    const textMessage = new CometChat.TextMessage(
+      groupId,
+      message,
+      CometChat.RECEIVER_TYPE.GROUP
+    );
+    
+    textMessage.setParentMessageId(parseInt(parentMessageId));
+    
+    const sentMessage = await CometChat.sendMessage(textMessage);
+   
+    return {
+      id: sentMessage.getId().toString(),
+      text: (sentMessage as CometChat.TextMessage).getText(),
+      sender: {
+        uid: sentMessage.getSender().getUid(),
+        name: sentMessage.getSender().getName(),
+        avatar: sentMessage.getSender().getAvatar()
+      },
+      sentAt: sentMessage.getSentAt(),
+      type: sentMessage.getType(),
+      status: 'sent',
+      parentMessageId: sentMessage.getParentMessageId() ? sentMessage.getParentMessageId().toString() : undefined
+    };
+  } catch (error) {
+    console.error("Error sending group thread message:", error);
     throw error;
   }
 };
@@ -544,27 +575,39 @@ export const fetchThreadMessages = async (parentMessageId: string) => {
 };
 
 export const subscribeToThreadMessages = (parentMessageId: string, callback: (message: CometChat.BaseMessage) => void) => {
-  const listenerID = `thread_message_listener_${parentMessageId}`;
+  const listenerID = `thread_messages_${parentMessageId}`;
   
   CometChat.addMessageListener(
     listenerID,
     new CometChat.MessageListener({
-      onTextMessageReceived: (message: CometChat.TextMessage) => {
-        if (message.getParentMessageId()?.toString() === parentMessageId) {
-          console.log("Thread text message received:", message);
-          callback(message);
+      onTextMessageReceived: (textMessage: CometChat.TextMessage) => {
+        try {
+          const msgParentId = textMessage.getParentMessageId();
+          if (msgParentId && msgParentId.toString() === parentMessageId) {
+            callback(textMessage);
+          }
+        } catch (error) {
+          console.error("Error in thread message listener:", error);
         }
       },
-      onMediaMessageReceived: (message: CometChat.MediaMessage) => {
-        if (message.getParentMessageId()?.toString() === parentMessageId) {
-          console.log("Thread media message received:", message);
-          callback(message);
+      onMediaMessageReceived: (mediaMessage: CometChat.MediaMessage) => {
+        try {
+          const msgParentId = mediaMessage.getParentMessageId();
+          if (msgParentId && msgParentId.toString() === parentMessageId) {
+            callback(mediaMessage);
+          }
+        } catch (error) {
+          console.error("Error in thread media message listener:", error);
         }
       },
-      onCustomMessageReceived: (message: CometChat.CustomMessage) => {
-        if (message.getParentMessageId()?.toString() === parentMessageId) {
-          console.log("Thread custom message received:", message);
-          callback(message);
+      onCustomMessageReceived: (customMessage: CometChat.CustomMessage) => {
+        try {
+          const msgParentId = customMessage.getParentMessageId();
+          if (msgParentId && msgParentId.toString() === parentMessageId) {
+            callback(customMessage);
+          }
+        } catch (error) {
+          console.error("Error in thread custom message listener:", error);
         }
       },
       onError: (error: CometChat.CometChatException) => {
@@ -573,9 +616,9 @@ export const subscribeToThreadMessages = (parentMessageId: string, callback: (me
     })
   );
 
+  // Return a cleanup function
   return () => {
     CometChat.removeMessageListener(listenerID);
-    console.log("Thread message listener removed:", listenerID);
   };
 };
 
@@ -1378,4 +1421,88 @@ export const subscribeToGroupEvents = (callback: (action: string, message: any, 
     CometChat.removeGroupListener(listenerID);
     console.log("Group action listener removed:", listenerID);
   };
+};
+
+export const sendGroupMediaThreadMessage = async (
+  groupId: string, 
+  mediaFile: { 
+    uri: string; 
+    type: string;
+    name: string;
+  }, 
+  messageType: typeof CometChat.MESSAGE_TYPE.IMAGE | 
+               typeof CometChat.MESSAGE_TYPE.VIDEO | 
+               typeof CometChat.MESSAGE_TYPE.AUDIO |
+               typeof CometChat.MESSAGE_TYPE.FILE,
+  parentMessageId: string
+): Promise<ChatMessage> => {
+  try {
+    console.log(`Sending group media thread message: type=${messageType}, uri=${mediaFile.uri}, parentMessageId=${parentMessageId}`);
+    
+    // Create a media message
+    const mediaMessage = new CometChat.MediaMessage(
+      groupId,
+      mediaFile,
+      messageType,
+      CometChat.RECEIVER_TYPE.GROUP
+    );
+    
+    // Set parent message ID
+    mediaMessage.setParentMessageId(parseInt(parentMessageId));
+    
+    // For videos, set some metadata to help with playback
+    if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+      mediaMessage.setMetadata({
+        fileType: 'video/mp4',
+        playable: true
+      });
+    }
+    
+    // Send the media message
+    const sentMessage = await CometChat.sendMediaMessage(mediaMessage);
+    console.log("Group media thread message sent successfully:", sentMessage);
+    
+    const attachment = (sentMessage as CometChat.MediaMessage).getAttachment();
+    console.log("Attachment details:", attachment ? {
+      url: attachment.getUrl(),
+      type: attachment.getMimeType(),
+      name: attachment.getName()
+    } : "No attachment");
+    
+    // Set message text based on type
+    let messageText = '';
+    if (messageType === CometChat.MESSAGE_TYPE.IMAGE) {
+      messageText = 'Image';
+    } else if (messageType === CometChat.MESSAGE_TYPE.VIDEO) {
+      messageText = 'Video';
+    } else if (messageType === CometChat.MESSAGE_TYPE.AUDIO) {
+      messageText = 'Audio';
+    } else if (messageType === CometChat.MESSAGE_TYPE.FILE) {
+      messageText = 'File';
+    } else {
+      messageText = 'Media';
+    }
+    
+    return {
+      id: sentMessage.getId().toString(),
+      text: messageText,
+      sender: {
+        uid: sentMessage.getSender().getUid(),
+        name: sentMessage.getSender().getName(),
+        avatar: sentMessage.getSender().getAvatar()
+      },
+      sentAt: sentMessage.getSentAt(),
+      type: sentMessage.getType(),
+      status: 'sent',
+      parentMessageId: sentMessage.getParentMessageId() ? sentMessage.getParentMessageId().toString() : undefined,
+      attachment: attachment ? {
+        url: attachment.getUrl(),
+        type: attachment.getMimeType(),
+        name: messageType === CometChat.MESSAGE_TYPE.VIDEO ? 'video.mp4' : mediaFile.name
+      } : undefined
+    };
+  } catch (error) {
+    console.error("Error sending group media thread message:", error);
+    throw error;
+  }
 };

@@ -11,7 +11,8 @@ import {
   Platform,
   StatusBar,
   Image,
-  Modal
+  Modal,
+  Alert
 } from 'react-native';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 import { User, ChatMessage, Reaction } from '../types/index';
@@ -30,9 +31,11 @@ import {
 } from './ChatUtils';
 import { 
   fetchThreadMessages, 
-  sendThreadMessage, 
+  sendThreadMessage,
+  sendGroupThreadMessage, 
   subscribeToThreadMessages, 
-  sendMediaThreadMessage, 
+  sendMediaThreadMessage,
+  sendGroupMediaThreadMessage, 
   subscribeToUserStatus, 
   typeMessageStarted, 
   typeMessageEnded, 
@@ -50,6 +53,7 @@ interface ThreadedChatProps {
   onClose: () => void;
   onThreadUpdate: (messageId: string, threadCount: number) => void;
   userStatuses?: { [key: string]: 'online' | 'offline' };
+  receiverType?: 'user' | 'group';
 }
 
 const ThreadedChat: React.FC<ThreadedChatProps> = ({ 
@@ -58,7 +62,8 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
   parentMessage, 
   onClose,
   onThreadUpdate,
-  userStatuses = {}
+  userStatuses = {},
+  receiverType = 'user'
 }) => {
   const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -86,8 +91,7 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
   useEffect(() => {
     loadThreadMessages();
     
-
-    threadListenerRef.current = subscribeToThreadMessages(parentMessage.id, (message) => {
+    const listenerID = subscribeToThreadMessages(parentMessage.id, (message) => {
       try {
         const convertedMessage = convertCometChatMessageToChat(message);
         if (convertedMessage) {
@@ -113,10 +117,10 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
       }
     });
     
+    threadListenerRef.current = listenerID;
     
     setupUserStatusListener(selectedUser.uid);
     
- 
     const typingListenerId = `thread_typing_listener_${parentMessage.id}`;
     CometChat.addMessageListener(
       typingListenerId,
@@ -198,7 +202,6 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
         threadListenerRef.current();
       }
       
- 
       Object.keys(statusListenerRefs.current).forEach(uid => {
         if (statusListenerRefs.current[uid]) {
           statusListenerRefs.current[uid]();
@@ -309,7 +312,13 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
     if (!newMessage.trim()) return;
     
     try {
-      const sentMessage = await sendThreadMessage(selectedUser.uid, newMessage, parentMessage.id);
+      let sentMessage;
+      
+      if (receiverType === 'group') {
+        sentMessage = await sendGroupThreadMessage(selectedUser.uid, newMessage, parentMessage.id);
+      } else {
+        sentMessage = await sendThreadMessage(selectedUser.uid, newMessage, parentMessage.id);
+      }
       
       if (sentMessage) {
         setThreadMessages(prevMessages => [...prevMessages, sentMessage]);
@@ -809,6 +818,21 @@ const ThreadedChat: React.FC<ThreadedChatProps> = ({
               </TouchableOpacity>
             </>
           )}
+          
+          {/* Add a disabled "Reply in thread" option with an alert explaining why it's not available */}
+          <TouchableOpacity 
+            style={[styles.optionButton, { opacity: 0.5 }]}
+            onPress={() => {
+              setShowMessageOptions(false);
+              Alert.alert(
+                "Nested Threads Not Supported",
+                "You cannot create a thread within a thread. Please use the current thread for your replies.",
+                [{ text: "OK" }]
+              );
+            }}
+          >
+            <Text style={[styles.optionText, { color: '#999' }]}>Reply in thread</Text>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     </Modal>

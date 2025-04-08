@@ -41,13 +41,17 @@ import {
   removeMembersFromGroup,
   addMembersToGroup,
   subscribeToGroupEvents,
-  fetchUsers
+  fetchUsers,
+  fetchThreadMessages,
+  sendThreadMessage,
+  subscribeToThreadMessages
 } from '../services/cometChat';
 import { Group, User, ChatMessage, GroupMember } from '../types';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 import * as ImagePicker from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
 import Video from 'react-native-video';
+import ThreadedChat from './ThreadedChat';
 
 interface GroupChatProps {
   currentUser: User;
@@ -85,6 +89,9 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
   const [memberToKick, setMemberToKick] = useState<GroupMember | null>(null);
   const [showConfirmation, setShowConfirmation] = useState<boolean>(false);
   const [confirmationAction, setConfirmationAction] = useState<'leave' | 'delete' | 'kick' | null>(null);
+  const [showThreadedChat, setShowThreadedChat] = useState(false);
+  const [selectedThreadMessage, setSelectedThreadMessage] = useState<ChatMessage | null>(null);
+  const [threadParticipants, setThreadParticipants] = useState<User[]>([]);
   
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1407,6 +1414,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                           item.type === CometChat.MESSAGE_TYPE.FILE;
     // Use the extended type for isLocalOnly  
     const isLocalOnlyMessage = item.isLocalOnly === true;
+    // Check if message has thread replies
+    const hasThreads = item.threadCount !== undefined && item.threadCount > 0;
 
     const showDateHeading =
       index === 0 ||
@@ -1427,18 +1436,14 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       <>
         {showDateHeading && (
           <View style={styles.dateHeadingContainer}>
-            <Text style={styles.dateHeadingText}>
-              {formatDateHeading(item.sentAt)}
-            </Text>
+            <Text style={styles.dateHeadingText}>{formatDateHeading(item.sentAt)}</Text>
           </View>
         )}
-        
-        <View
-          style={[
-            styles.messageRowContainer,
-            isSentByMe ? styles.sentMessageRowContainer : styles.receivedMessageRowContainer,
-          ]}
-        >
+        <View style={[
+          styles.messageRowContainer,
+          isSentByMe ? styles.sentMessageRowContainer : styles.receivedMessageRowContainer,
+          isLocalOnlyMessage && { opacity: 0.7 },
+        ]}>
           {!isSentByMe && (
             <View style={styles.avatarContainer}>
               {item.sender.avatar ? (
@@ -1484,37 +1489,38 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                       resizeMode="cover"
                     />
                   )}
+                  
                   {item.type === CometChat.MESSAGE_TYPE.VIDEO && (
                     <TouchableOpacity
                       onPress={() => {
                         if (item.attachment?.url) {
-                          setPlayingVideo(playingVideo === item.attachment.url ? null : item.attachment.url);
+                          setPlayingVideo(playingVideo === item.id ? null : item.id);
                         }
                       }}
                       disabled={isLocalOnlyMessage}
                     >
-                      {playingVideo === item.attachment?.url ? (
-                        <Video
-                          source={{ uri: item.attachment.url }}
-                          style={styles.videoPlayer}
-                          resizeMode="contain"
-                          controls={true}
-                        />
-                      ) : (
+                      <Video
+                        source={{ uri: item.attachment?.url }}
+                        style={styles.videoPlayer}
+                        resizeMode="contain"
+                        controls={true}
+                        paused={playingVideo !== item.id}
+                        onError={(error) => console.error("Video playback error:", error)}
+                      />
+                      {playingVideo !== item.id && (
                         <View style={styles.videoPlaceholder}>
                           <Text style={styles.playButton}>Play</Text>
                         </View>
                       )}
                     </TouchableOpacity>
                   )}
-                  {item.type === CometChat.MESSAGE_TYPE.AUDIO && (
-                    <View style={styles.audioContainer}>
-                      <Text style={styles.audioText}>Audio Message</Text>
-                    </View>
-                  )}
-                  {item.type === CometChat.MESSAGE_TYPE.FILE && (
-                    <View style={styles.audioContainer}>
-                      <Text style={styles.audioText}>Document</Text>
+                  
+                  {(item.type === CometChat.MESSAGE_TYPE.AUDIO || item.type === CometChat.MESSAGE_TYPE.FILE) && (
+                    <View style={styles.fileContainer}>
+                      <Text style={styles.fileText}>
+                        {item.type === CometChat.MESSAGE_TYPE.AUDIO ? '🎵 Audio File' : '📄 Document'}
+                        {item.attachment?.name && `: ${item.attachment.name}`}
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -1524,38 +1530,31 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                   isDeleted && styles.deletedMessageText
                 ]}>
                   {item.text}
+                  {isEdited && !isDeleted && (
+                    <Text style={styles.editedText}> (edited)</Text>
+                  )}
                 </Text>
               )}
               
               <View style={styles.messageFooter}>
                 <Text style={styles.messageTime}>{messageTime}</Text>
-                {isSentByMe && !isLocalOnlyMessage && (
-                  <View style={styles.messageStatusContainer}>
-                    {item.status === 'seen' && (
-                      <Text style={styles.messageStatusSeen}>✓✓</Text>
-                    )}
-                    {item.status === 'delivered' && (
-                      <Text style={styles.messageStatusDelivered}>✓✓</Text>
-                    )}
-                    {item.status === 'sent' && (
-                      <Text style={styles.messageStatusSent}>✓</Text>
-                    )}
-                  </View>
-                )}
-                {isEdited && !isDeleted && (
-                  <Text style={styles.editedText}>edited</Text>
-                )}
-                {isLocalOnlyMessage && (
-                  <ActivityIndicator size="small" color="#075E54" style={styles.sendingIndicator} />
-                )}
               </View>
             </TouchableOpacity>
-            
-            {item.reactions && item.reactions.length > 0 && !isLocalOnlyMessage && (
-              <View style={styles.reactionsContainer}>
-                {renderReactions(item)}
-              </View>
+
+            {/* Add thread count display below the message */}
+            {hasThreads && (
+              <TouchableOpacity 
+                style={styles.threadCountContainer}
+                onPress={() => handleOpenThread(item)}
+              >
+                <Text style={styles.threadCountText}>
+                  {item.threadCount} {item.threadCount === 1 ? 'reply' : 'replies'}
+                </Text>
+              </TouchableOpacity>
             )}
+            
+            {/* Render reactions outside of the message bubble */}
+            {renderReactions(item)}
           </View>
           
           {isSentByMe && (
@@ -1625,6 +1624,21 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     );
   };
   
+  const handleOpenThread = (message: ChatMessage) => {
+    setSelectedThreadMessage(message);
+    setShowThreadedChat(true);
+  };
+
+  const handleThreadUpdate = (messageId: string, threadCount: number) => {
+    setMessages(prevMessages => 
+      prevMessages.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, threadCount }
+          : msg
+      )
+    );
+  };
+
   const renderMessageOptions = () => (
     <Modal
       visible={showMessageOptions}
@@ -1637,15 +1651,13 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         activeOpacity={1}
         onPress={() => setShowMessageOptions(false)}
       >
-        <View 
-          style={[
-            styles.messageOptionsContainer,
-            {
-              top: messageOptionsPosition.y - 100,
-              left: selectedMessage?.sender.uid === currentUser.uid ? messageOptionsPosition.x - 150 : messageOptionsPosition.x
-            }
-          ]}
-        >
+        <View style={[
+          styles.messageOptionsContainer,
+          {
+            top: messageOptionsPosition.y - 100,
+            left: selectedMessage?.sender.uid === currentUser.uid ? messageOptionsPosition.x - 150 : messageOptionsPosition.x
+          }
+        ]}>
           {selectedMessage?.sender.uid === currentUser.uid && !selectedMessage?.isDeleted && (
             <>
               <TouchableOpacity 
@@ -1683,6 +1695,18 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                 }}
               >
                 <Text style={styles.messageOptionText}>React</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.messageOption}
+                onPress={() => {
+                  if (selectedMessage) {
+                    handleOpenThread(selectedMessage);
+                    setShowMessageOptions(false);
+                  }
+                }}
+              >
+                <Text style={styles.messageOptionText}>Reply in thread</Text>
               </TouchableOpacity>
             </>
           )}
@@ -2366,6 +2390,25 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       {renderGroupInfo()}
       {renderConfirmationModal()}
       {renderAddMembersModal()}
+
+      {showThreadedChat && selectedThreadMessage && (
+        <ThreadedChat
+          currentUser={currentUser}
+          selectedUser={{
+            uid: selectedGroup.guid,
+            name: selectedGroup.name,
+            avatar: selectedGroup.icon
+          }}
+          parentMessage={selectedThreadMessage}
+          onClose={() => {
+            setShowThreadedChat(false);
+            setSelectedThreadMessage(null);
+          }}
+          onThreadUpdate={handleThreadUpdate}
+          userStatuses={{}}
+          receiverType="group"
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -3209,6 +3252,32 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     backgroundColor: '#C4C4C4',
+  },
+  // Thread count styles
+  threadCountContainer: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginTop: 4,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    backgroundColor: '#F0F0F0',
+  },
+  threadCountText: {
+    fontSize: 12,
+    color: '#075E54',
+    fontWeight: '500',
+  },
+  
+  // File display styles
+  fileContainer: {
+    padding: 10,
+    backgroundColor: '#E1F5FE',
+    borderRadius: 8,
+    marginBottom: 5,
+  },
+  fileText: {
+    color: '#0277BD',
+    fontSize: 14,
   },
 });
 
