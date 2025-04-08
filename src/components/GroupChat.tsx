@@ -124,9 +124,13 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
 
   const loadMessages = async () => {
     try {
+      console.log("Loading messages for group:", selectedGroup.guid);
       const fetchedMessages = await fetchGroupMessages(selectedGroup.guid);
       
       if (Array.isArray(fetchedMessages)) {
+        console.log(`Fetched ${fetchedMessages.length} messages`);
+        
+        // Filter out action messages
         const filteredMessages = fetchedMessages.filter(message => {
           try {
             if ((message as any).getCategory && (message as any).getCategory() === "action") {
@@ -140,7 +144,10 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           }
         });
         
+        console.log(`After filtering: ${filteredMessages.length} messages`);
+        
         const formattedMessages: LocalChatMessage[] = filteredMessages.map(message => {
+          // Get message metadata, especially for reactions
           let metadata;
           try {
             if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
@@ -155,17 +162,18 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             metadata = undefined;
           }
           
+          // Format reactions for the UI
           const reactions = metadata?.reactions;
-          
           let formattedReactions: {emoji: string; count: number; reactedByMe: boolean}[] = [];
           
           if (reactions && typeof reactions === 'object') {
             try {
               formattedReactions = Object.entries(reactions).map(([emoji, users]) => {
                 console.log(`Processing reaction ${emoji} with users:`, users);
+                // Ensure users is an object before using Object.keys
                 const userObj = users as Record<string, any>;
                 
-          
+                // Check if current user has reacted
                 const reactedByMe = Object.keys(userObj).includes(currentUser.uid);
                 
                 return {
@@ -181,6 +189,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             }
           }
           
+          // Handle media attachments
           let attachment;
           try {
             if (message.getType() !== CometChat.MESSAGE_TYPE.TEXT) {
@@ -216,6 +225,21 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             console.log("Error getting message status:", error);
           }
           
+          // Check for edited message info
+          let editedAt;
+          let editedBy;
+          try {
+            if ((message as any).getEditedAt && typeof (message as any).getEditedAt === 'function') {
+              editedAt = (message as any).getEditedAt();
+            }
+            if ((message as any).getEditedBy && typeof (message as any).getEditedBy === 'function') {
+              editedBy = (message as any).getEditedBy();
+            }
+          } catch (error) {
+            console.log("Error getting edit information:", error);
+          }
+          
+          // Format the message for the UI
           return {
             id: message.getId().toString(),
             text: isDeleted 
@@ -234,11 +258,12 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             reactions: formattedReactions,
             attachment: attachment,
             isDeleted: isDeleted,
-            editedAt: (message as any).getEditedAt ? (message as any).getEditedAt() : undefined,
-            editedBy: (message as any).getEditedBy ? (message as any).getEditedBy() : undefined
+            editedAt: editedAt,
+            editedBy: editedBy
           };
         });
         
+        // Update state with formatted messages
         setMessages(formattedMessages);
         
         // Scroll to the bottom
@@ -301,7 +326,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       }
     });
 
-    // Set up message deletion listener
+    // Improved message deletion listener
     deletionListenerRef.current = subscribeToMessageDeletion((deletedMessage) => {
       // Skip if not for this group
       if (
@@ -314,6 +339,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       const messageId = deletedMessage.getId().toString();
       console.log("Message deleted in group:", messageId);
       
+      // Immediately update the UI for all users
       setMessages(prevMessages => 
         prevMessages.map(msg => 
           msg.id === messageId
@@ -331,11 +357,21 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       ) {
         console.log("Message edited in real-time:", editedMessage);
         
+        // Get message ID
+        const messageId = editedMessage.getId().toString();
+        
+        // Get message text for edited TextMessages
+        let messageText = '';
+        if (editedMessage.getType() === CometChat.MESSAGE_TYPE.TEXT) {
+          messageText = (editedMessage as CometChat.TextMessage).getText();
+        }
+        
         // Get any metadata that may have updated (like reactions)
         let metadata;
         try {
           if ((editedMessage as any).getMetadata && typeof (editedMessage as any).getMetadata === 'function') {
             metadata = (editedMessage as any).getMetadata();
+            console.log("Edited message metadata:", metadata);
           }
         } catch (error) {
           console.log("Error getting metadata in edit listener:", error);
@@ -358,19 +394,90 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           }
         }
         
+        // Update the message in state with all properties
         setMessages(prevMessages => 
-          prevMessages.map(msg => 
-            msg.id === editedMessage.getId().toString()
-              ? {
-                  ...msg,
-                  text: (editedMessage as CometChat.TextMessage).getText(),
-                  editedAt: (editedMessage as any).getEditedAt?.(),
-                  editedBy: (editedMessage as any).getEditedBy?.(),
-                  reactions: formattedReactions.length > 0 ? formattedReactions : msg.reactions
-                }
-              : msg
-          )
+          prevMessages.map(msg => {
+            if (msg.id === messageId) {
+              return {
+                ...msg,
+                text: messageText || msg.text, // Preserve text if not a TextMessage
+                editedAt: Date.now(),
+                editedBy: editedMessage.getSender().getUid(),
+                reactions: formattedReactions.length > 0 ? formattedReactions : msg.reactions
+              };
+            }
+            return msg;
+          })
         );
+      }
+    });
+
+    // Improved reaction listener
+    reactionListenerRef.current = subscribeToReactions((message) => {
+      // Only process for this group
+      if (message.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP &&
+          message.getReceiverId() === selectedGroup.guid) {
+        console.log("Reaction updated for message:", message.getId());
+        
+        // Get metadata for reactions
+        let metadata;
+        try {
+          if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
+            metadata = (message as any).getMetadata();
+            console.log("Reaction metadata:", metadata);
+          } else if ((message as any).metadata) {
+            metadata = (message as any).metadata;
+          }
+        } catch (error) {
+          console.error("Error getting metadata from reaction callback:", error);
+          return;
+        }
+        
+        // Format reactions
+        const reactions = metadata?.reactions;
+        if (!reactions) {
+          console.log("No reactions in metadata");
+          return;
+        }
+        
+        let formattedReactions: {emoji: string; count: number; reactedByMe: boolean}[] = [];
+        try {
+          formattedReactions = Object.entries(reactions).map(([emoji, users]) => {
+            // Ensure users is an object before using Object.keys
+            const userObj = users as Record<string, any>;
+            return {
+              emoji,
+              count: Object.keys(userObj).length,
+              reactedByMe: Object.keys(userObj).includes(currentUser.uid)
+            };
+          });
+          
+          console.log("Formatted reactions:", formattedReactions);
+        } catch (error) {
+          console.error("Error formatting reactions in reaction callback:", error);
+          return;
+        }
+        
+        // Update the message in state
+        setMessages(prevMessages => {
+          // First, check if the message exists in our state
+          const messageExists = prevMessages.some(msg => msg.id === message.getId().toString());
+          
+          if (messageExists) {
+            return prevMessages.map(msg => 
+              msg.id === message.getId().toString()
+                ? {
+                    ...msg,
+                    reactions: formattedReactions
+                  }
+                : msg
+            );
+          } else {
+            // If the message doesn't exist yet (rare case), we might need to fetch it
+            console.log("Message for reaction not found in state, skipping update");
+            return prevMessages;
+          }
+        });
       }
     });
 
@@ -391,6 +498,15 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             }
             
             console.log("Group text message received:", textMessage);
+            
+            // Check if message already exists (to avoid duplicates)
+            const messageId = textMessage.getId().toString();
+            const messageExists = messages.some(msg => msg.id === messageId);
+            
+            if (messageExists) {
+              console.log(`Message ${messageId} already exists in state, skipping`);
+              return;
+            }
             
             // Get metadata for reactions
             let metadata;
@@ -456,6 +572,15 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             }
             
             console.log("Group media message received:", mediaMessage);
+            
+            // Check if message already exists (to avoid duplicates)
+            const messageId = mediaMessage.getId().toString();
+            const messageExists = messages.some(msg => msg.id === messageId);
+            
+            if (messageExists) {
+              console.log(`Message ${messageId} already exists in state, skipping`);
+              return;
+            }
             
             const attachment = mediaMessage.getAttachment();
             let messageText = 'Media';
@@ -593,9 +718,11 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
               msg.id === message.getId().toString()
                 ? {
                     ...msg,
-                    text: (message as CometChat.TextMessage).getText(),
-                    editedAt: (message as any).getEditedAt?.(),
-                    editedBy: (message as any).getEditedBy?.(),
+                    text: message.getType() === CometChat.MESSAGE_TYPE.TEXT 
+                      ? (message as CometChat.TextMessage).getText() 
+                      : msg.text,
+                    editedAt: Date.now(),
+                    editedBy: message.getSender().getUid(),
                     reactions: formattedReactions.length > 0 ? formattedReactions : msg.reactions
                   }
                 : msg
@@ -604,64 +731,6 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         }
       })
     );
-
-    // Add a reaction listener
-    reactionListenerRef.current = subscribeToReactions((message) => {
-      // Only process for this group
-      if (message.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP &&
-          message.getReceiverId() === selectedGroup.guid) {
-        console.log("Reaction updated for message:", message.getId());
-        
-        // Get metadata for reactions
-        let metadata;
-        try {
-          if ((message as any).getMetadata && typeof (message as any).getMetadata === 'function') {
-            metadata = (message as any).getMetadata();
-            console.log("Reaction metadata:", metadata);
-          } else if ((message as any).metadata) {
-            metadata = (message as any).metadata;
-          }
-        } catch (error) {
-          console.error("Error getting metadata from reaction callback:", error);
-          return;
-        }
-        
-        // Format reactions
-        const reactions = metadata?.reactions;
-        if (!reactions) {
-          console.log("No reactions in metadata");
-          return;
-        }
-        
-        let formattedReactions: {emoji: string; count: number; reactedByMe: boolean}[] = [];
-        try {
-          formattedReactions = Object.entries(reactions).map(([emoji, users]) => {
-            // Ensure users is an object before using Object.keys
-            const userObj = users as Record<string, any>;
-            return {
-              emoji,
-              count: Object.keys(userObj).length,
-              reactedByMe: Object.keys(userObj).includes(currentUser.uid)
-            };
-          });
-        } catch (error) {
-          console.error("Error formatting reactions in reaction callback:", error);
-          return;
-        }
-        
-        // Update the message in state
-        setMessages(prevMessages => 
-          prevMessages.map(msg => 
-            msg.id === message.getId().toString()
-              ? {
-                  ...msg,
-                  reactions: formattedReactions
-                }
-              : msg
-          )
-        );
-      }
-    });
 
     // Set up group events listener
     groupEventsListenerRef.current = subscribeToGroupEvents((action, message, userUid, groupGuid) => {
@@ -728,33 +797,42 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     setIsLoading(true);
     
     try {
-      
+      // Create a local copy of the edited message for immediate UI update
       const localEditedMessage = {
         ...editingMessage,
         text: editText.trim(),
         editedAt: Date.now()
       };
       
-     
+      // Update the UI immediately for better user experience
       setMessages(prevMessages => 
         prevMessages.map(msg => 
           msg.id === editingMessage.id ? localEditedMessage : msg
         )
       );
       
-      
+      // Clear the editing state
       setEditingMessage(null);
       setEditText('');
       
       console.log(`Attempting to edit message with ID: ${editingMessage.id}`);
       try {
+        // Make the API call
         await editGroupMessage(editingMessage.id, editText.trim());
         console.log(`Successfully edited message with ID: ${editingMessage.id}`);
+        // No need to reload messages as the edit listener will update the state
       } catch (apiError) {
         console.error(`API error when editing message with ID ${editingMessage.id}:`, apiError);
         Alert.alert(
           "Error", 
-          `Failed to edit message (ID: ${editingMessage.id}). The message may have been deleted or not found.`
+          `Failed to edit message. The message may have been deleted or not found.`
+        );
+        
+        // Revert the local edit on API error
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === editingMessage.id ? editingMessage : msg
+          )
         );
       }
     } catch (error) {
@@ -781,7 +859,10 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     try {
       console.log(`Attempting to delete message with ID: ${messageId}`);
       
-    
+      // Get the original message to restore if the API call fails
+      const originalMessage = messages.find(msg => msg.id === messageId);
+      
+      // Update the UI immediately
       setMessages(prevMessages => 
         prevMessages.map(msg => 
           msg.id === messageId
@@ -790,16 +871,26 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         )
       );
       
-  
       try {
+        // Make the API call
         await deleteMessage(messageId);
         console.log(`Successfully deleted message with ID: ${messageId}`);
+        // No need to reload messages as the delete listener will update the state
       } catch (apiError) {
         console.error(`API error when deleting message with ID ${messageId}:`, apiError);
         Alert.alert(
           "Error", 
-          `Failed to delete message (ID: ${messageId}). The message may have been deleted already or not found.`
+          `Failed to delete message. The message may have been deleted already or not found.`
         );
+        
+        // Revert local deletion if we have the original message
+        if (originalMessage) {
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === messageId ? originalMessage : msg
+            )
+          );
+        }
       }
     } catch (error) {
       console.error(`Error in handleDeleteMessage for message ID ${messageId}:`, error);
@@ -896,6 +987,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     console.log(`Adding reaction ${emoji} to message ${messageId}`);
     
     try {
+      // Immediately update the UI for better responsiveness
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
@@ -925,24 +1017,44 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         })
       );
       
-     
+      // Make the API call to update the reaction
       try {
         console.log(`Calling addReactionToMessage service with messageId: ${messageId}, emoji: ${emoji}`);
-        const result = await addReactionToMessage(messageId, emoji, currentUser.uid, currentUser.name);
-        console.log("Reaction added successfully, result:", result);
-        setTimeout(() => {
-          loadMessages();
-        }, 1000);
+        await addReactionToMessage(messageId, emoji, currentUser.uid, currentUser.name);
+        console.log("Reaction added successfully");
+        
+        // The reaction listener will update all clients automatically
       } catch (apiError) {
         console.error(`API error when adding reaction ${emoji} to message ${messageId}:`, apiError);
-        if (apiError instanceof Error) {
-          console.log("Error message:", apiError.message);
-          console.log("Error stack:", apiError.stack);
-        }
+        
+        // Don't show alert as it's disruptive, just revert the local state
+        setMessages(prevMessages =>
+          prevMessages.map(msg => {
+            if (msg.id === messageId) {
+              const updatedReactions = [...(msg.reactions || [])].map(r => {
+                if (r.emoji === emoji && r.reactedByMe) {
+                  // If we added this reaction, revert it
+                  return {
+                    ...r,
+                    count: r.count - 1,
+                    reactedByMe: false
+                  };
+                }
+                return r;
+              }).filter(r => r.count > 0); // Remove any with count 0
+              
+              return {
+                ...msg,
+                reactions: updatedReactions
+              };
+            }
+            return msg;
+          })
+        );
       }
     } catch (error) {
       console.error("Error in handleAddReaction:", error);
-      Alert.alert("Error", "Failed to add reaction. Please try again.");
+      // Reload messages if there was a serious error
       loadMessages();
     } finally {
       setIsLoading(false);
@@ -957,11 +1069,12 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     console.log(`Removing reaction ${emoji} from message ${messageId}`);
     
     try {
+      // Immediately update the UI for better responsiveness
       setMessages(prevMessages => 
         prevMessages.map(msg => {
           if (msg.id === messageId) {
             const updatedReactions = [...(msg.reactions || [])].map(r => {
-              if (r.emoji === emoji) {
+              if (r.emoji === emoji && r.reactedByMe) {
                 return {
                   ...r,
                   count: Math.max(0, r.count - 1),
@@ -969,7 +1082,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                 };
               }
               return r;
-            }).filter(r => r.count > 0);
+            }).filter(r => r.count > 0); // Remove any with count 0
             
             return {
               ...msg,
@@ -980,31 +1093,22 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         })
       );
       
-     
+      // Make the API call to remove the reaction
       try {
         console.log(`Calling removeReactionFromMessage service with messageId: ${messageId}, emoji: ${emoji}`);
-        const result = await removeReactionFromMessage(messageId, emoji, currentUser.uid);
-        console.log("Reaction removed successfully, result:", result);
+        await removeReactionFromMessage(messageId, emoji, currentUser.uid);
+        console.log("Reaction removed successfully");
         
-      
-        setTimeout(() => {
-          loadMessages();
-        }, 1000);
+        // The reaction listener will update all clients automatically
       } catch (apiError) {
         console.error(`API error when removing reaction ${emoji} from message ${messageId}:`, apiError);
         
-      
-        if (apiError instanceof Error) {
-          console.log("Error message:", apiError.message);
-          console.log("Error stack:", apiError.stack);
-        }
+        // Don't show alert as it's disruptive, just revert the local state
+        loadMessages(); // Reload to ensure correct state
       }
     } catch (error) {
       console.error("Error in handleRemoveReaction:", error);
-      Alert.alert("Error", "Failed to remove reaction. Please try again.");
-      
-      // Reload messages on error
-      loadMessages();
+      loadMessages(); // Reload to ensure correct state
     } finally {
       setIsLoading(false);
     }
