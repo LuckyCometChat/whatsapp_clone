@@ -139,13 +139,21 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       if (Array.isArray(fetchedMessages)) {
         console.log(`Fetched ${fetchedMessages.length} messages`);
         
-        // Filter out action messages
+        // Filter out action messages and thread messages
         const filteredMessages = fetchedMessages.filter(message => {
           try {
+            // Skip action messages
             if ((message as any).getCategory && (message as any).getCategory() === "action") {
               console.log("Skipping action message");
               return false;
             }
+            
+            // Skip thread messages
+            if ((message as any).getParentMessageId && (message as any).getParentMessageId()) {
+              console.log("Skipping thread message:", message.getId());
+              return false;
+            }
+            
             return true;
           } catch (error) {
             console.error("Error checking message category:", error);
@@ -803,6 +811,12 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             return;
           }
           
+          // Skip if this is a thread message
+          if (message.getParentMessageId && message.getParentMessageId()) {
+            console.log("Skipping thread message deletion in main chat:", message.getId());
+            return;
+          }
+          
           console.log("Message deleted:", message);
           const messageId = message.getId().toString();
           
@@ -821,6 +835,12 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             message.getReceiverType() !== CometChat.RECEIVER_TYPE.GROUP || 
             message.getReceiverId() !== selectedGroup.guid
           ) {
+            return;
+          }
+          
+          // Skip if this is a thread message
+          if (message.getParentMessageId && message.getParentMessageId()) {
+            console.log("Skipping thread message edit in main chat:", message.getId());
             return;
           }
           
