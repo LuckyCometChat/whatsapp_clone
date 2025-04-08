@@ -359,14 +359,39 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       const messageId = deletedMessage.getId().toString();
       console.log("Message deleted in group:", messageId);
       
-      // Immediately update the UI for all users
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === messageId
-            ? { ...msg, text: "This message was deleted", isDeleted: true }
-            : msg
-        )
-      );
+      const parentMessageId = deletedMessage.getParentMessageId()?.toString();
+      
+      if (parentMessageId) {
+        // This is a thread message being deleted
+        // Update the parent message's thread count
+        console.log(`Thread message deleted: updating count for parent message ${parentMessageId}`);
+        
+        // Get the real thread count to ensure accuracy
+        getThreadMessageCount(parentMessageId)
+          .then(realCount => {
+            console.log(`Fetched real thread count for message ${parentMessageId}: ${realCount}`);
+            setMessages(prevMessages => 
+              prevMessages.map(msg => 
+                msg.id === parentMessageId 
+                  ? { ...msg, threadCount: realCount } 
+                  : msg
+              )
+            );
+          })
+          .catch(err => {
+            console.error("Error fetching thread count after deletion:", err);
+          });
+      } else {
+        // Regular message deletion
+        // Immediately update the UI for all users
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageId
+              ? { ...msg, text: "This message was deleted", isDeleted: true }
+              : msg
+          )
+        );
+      }
     });
 
     // Improved edit listener for real-time updates
@@ -379,6 +404,26 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         
         // Get message ID
         const messageId = editedMessage.getId().toString();
+        
+        // Check if this is a thread message edit
+        const parentMessageId = editedMessage.getParentMessageId()?.toString();
+        if (parentMessageId) {
+          // For thread messages, we don't need to update anything in the main chat
+          // except maybe refresh the thread count to be safe
+          console.log(`Thread message edited for parent ${parentMessageId}, ensuring counts are accurate`);
+          getThreadMessageCount(parentMessageId)
+            .then(realCount => {
+              setMessages(prevMessages => 
+                prevMessages.map(msg => 
+                  msg.id === parentMessageId 
+                    ? { ...msg, threadCount: realCount } 
+                    : msg
+                )
+              );
+            })
+            .catch(err => console.error("Error updating thread count after edit:", err));
+          return;
+        }
         
         // Get message text for edited TextMessages
         let messageText = '';
@@ -523,7 +568,24 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
               
               // Instead of adding the message to the main chat, update the thread count
               const parentId = textMessage.getParentMessageId().toString();
+              
+              // First update with +1 for immediate feedback
+              setMessages(prevMessages => 
+                prevMessages.map(msg => 
+                  msg.id === parentId 
+                    ? { 
+                        ...msg, 
+                        threadCount: msg.threadCount !== undefined ? msg.threadCount + 1 : 1 
+                      } 
+                    : msg
+                )
+              );
+              
+              // Then get accurate count from server
               getThreadMessageCount(parentId).then(threadCount => {
+                console.log(`Real thread count for ${parentId}: ${threadCount}`);
+                
+                // Update with real count for consistency
                 setMessages(prevMessages => 
                   prevMessages.map(msg => 
                     msg.id === parentId 
@@ -531,7 +593,10 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                       : msg
                   )
                 );
+              }).catch(error => {
+                console.error("Error getting thread count:", error);
               });
+              
               return;
             }
             
@@ -613,9 +678,25 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             if (mediaMessage.getParentMessageId && mediaMessage.getParentMessageId()) {
               console.log("Skipping thread media message in main chat:", mediaMessage.getId());
               
-              // Update thread count instead
+              // Update thread count first with +1 for immediate feedback
               const parentId = mediaMessage.getParentMessageId().toString();
+              
+              setMessages(prevMessages => 
+                prevMessages.map(msg => 
+                  msg.id === parentId 
+                    ? { 
+                        ...msg, 
+                        threadCount: msg.threadCount !== undefined ? msg.threadCount + 1 : 1 
+                      } 
+                    : msg
+                )
+              );
+              
+              // Then get accurate count from server
               getThreadMessageCount(parentId).then(threadCount => {
+                console.log(`Real thread count for ${parentId}: ${threadCount}`);
+                
+                // Update with real count for consistency
                 setMessages(prevMessages => 
                   prevMessages.map(msg => 
                     msg.id === parentId 
@@ -623,7 +704,10 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                       : msg
                   )
                 );
+              }).catch(error => {
+                console.error("Error getting thread count:", error);
               });
+              
               return;
             }
             
@@ -1680,6 +1764,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
 
   const handleThreadUpdate = (messageId: string, threadCount: number) => {
     console.log(`Updating thread count for message ${messageId} to ${threadCount}`);
+    
+    // Immediately update the count in the UI for better responsiveness
     setMessages(prevMessages => 
       prevMessages.map(msg => 
         msg.id === messageId 
@@ -1687,6 +1773,26 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           : msg
       )
     );
+    
+    // Get the real thread count to ensure accuracy across all clients
+    getThreadMessageCount(messageId)
+      .then(realCount => {
+        console.log(`Got real thread count for ${messageId}: ${realCount}`);
+        
+        // After a slight delay, update again with the real count
+        setTimeout(() => {
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === messageId
+                ? { ...msg, threadCount: realCount }
+                : msg
+            )
+          );
+        }, 300);
+      })
+      .catch(error => {
+        console.error("Error getting real thread count:", error);
+      });
   };
 
   const renderMessageOptions = () => (
@@ -2452,6 +2558,16 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             }}
             parentMessage={selectedThreadMessage}
             onClose={() => {
+              // When closing the thread, refresh the thread count to ensure it's accurate
+              if (selectedThreadMessage) {
+                getThreadMessageCount(selectedThreadMessage.id)
+                  .then(realCount => {
+                    console.log(`Refreshing thread count on close: ${selectedThreadMessage.id} -> ${realCount}`);
+                    handleThreadUpdate(selectedThreadMessage.id, realCount);
+                  })
+                  .catch(err => console.error("Error refreshing thread count on close:", err));
+              }
+              
               setShowThreadedChat(false);
               setSelectedThreadMessage(null);
             }}
