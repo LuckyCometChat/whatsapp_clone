@@ -22,7 +22,7 @@ import {
   fetchGroupMessages,
   sendGroupMessage,
   editGroupMessage,
-  deleteMessage,
+  deleteMessage as deleteGroupMessage,
   subscribeToMessageDeletion,
   subscribeToMessageEdit,
   subscribeToReactions,
@@ -44,7 +44,8 @@ import {
   fetchUsers,
   fetchThreadMessages,
   sendThreadMessage,
-  subscribeToThreadMessages
+  subscribeToThreadMessages,
+  getThreadMessageCount
 } from '../services/cometChat';
 import { Group, User, ChatMessage, GroupMember } from '../types';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
@@ -52,6 +53,7 @@ import * as ImagePicker from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
 import Video from 'react-native-video';
 import ThreadedChat from './ThreadedChat';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 interface GroupChatProps {
   currentUser: User;
@@ -270,11 +272,22 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           };
         });
         
+        // Get thread counts for all messages
+        const messagesWithThreadCounts = await Promise.all(
+          formattedMessages.map(async (msg) => {
+            const threadCount = await getThreadMessageCount(msg.id);
+            return {
+              ...msg,
+              threadCount: threadCount > 0 ? threadCount : undefined
+            };
+          })
+        );
+        
         // Update state with formatted messages
-        setMessages(formattedMessages);
+        setMessages(messagesWithThreadCounts);
         
         // Scroll to the bottom
-        if (flatListRef.current && formattedMessages.length > 0) {
+        if (flatListRef.current && messagesWithThreadCounts.length > 0) {
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: false });
           }, 200);
@@ -504,6 +517,24 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
               return;
             }
             
+            // Skip thread messages - these should only appear in their respective thread
+            if (textMessage.getParentMessageId && textMessage.getParentMessageId()) {
+              console.log("Skipping thread message in main chat:", textMessage.getId());
+              
+              // Instead of adding the message to the main chat, update the thread count
+              const parentId = textMessage.getParentMessageId().toString();
+              getThreadMessageCount(parentId).then(threadCount => {
+                setMessages(prevMessages => 
+                  prevMessages.map(msg => 
+                    msg.id === parentId 
+                      ? { ...msg, threadCount } 
+                      : msg
+                  )
+                );
+              });
+              return;
+            }
+            
             console.log("Group text message received:", textMessage);
             
             // Check if message already exists (to avoid duplicates)
@@ -575,6 +606,24 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             // Skip action messages
             if ((mediaMessage as any).getCategory && (mediaMessage as any).getCategory() === 'action') {
               console.log("Skipping action message:", mediaMessage);
+              return;
+            }
+            
+            // Skip thread messages - these should only appear in their respective thread
+            if (mediaMessage.getParentMessageId && mediaMessage.getParentMessageId()) {
+              console.log("Skipping thread media message in main chat:", mediaMessage.getId());
+              
+              // Update thread count instead
+              const parentId = mediaMessage.getParentMessageId().toString();
+              getThreadMessageCount(parentId).then(threadCount => {
+                setMessages(prevMessages => 
+                  prevMessages.map(msg => 
+                    msg.id === parentId 
+                      ? { ...msg, threadCount } 
+                      : msg
+                  )
+                );
+              });
               return;
             }
             
@@ -880,7 +929,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       
       try {
         // Make the API call
-        await deleteMessage(messageId);
+        await deleteGroupMessage(messageId);
         console.log(`Successfully deleted message with ID: ${messageId}`);
         // No need to reload messages as the delete listener will update the state
       } catch (apiError) {
@@ -1541,7 +1590,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
               </View>
             </TouchableOpacity>
 
-            {/* Add thread count display below the message */}
+            {/* Show thread count without icon */}
             {hasThreads && (
               <TouchableOpacity 
                 style={styles.threadCountContainer}
@@ -1630,6 +1679,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
   };
 
   const handleThreadUpdate = (messageId: string, threadCount: number) => {
+    console.log(`Updating thread count for message ${messageId} to ${threadCount}`);
     setMessages(prevMessages => 
       prevMessages.map(msg => 
         msg.id === messageId 
@@ -2392,22 +2442,24 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       {renderAddMembersModal()}
 
       {showThreadedChat && selectedThreadMessage && (
-        <ThreadedChat
-          currentUser={currentUser}
-          selectedUser={{
-            uid: selectedGroup.guid,
-            name: selectedGroup.name,
-            avatar: selectedGroup.icon
-          }}
-          parentMessage={selectedThreadMessage}
-          onClose={() => {
-            setShowThreadedChat(false);
-            setSelectedThreadMessage(null);
-          }}
-          onThreadUpdate={handleThreadUpdate}
-          userStatuses={{}}
-          receiverType="group"
-        />
+        <View style={styles.fullScreenContainer}>
+          <ThreadedChat
+            currentUser={currentUser}
+            selectedUser={{
+              uid: selectedGroup.guid,
+              name: selectedGroup.name,
+              avatar: selectedGroup.icon
+            }}
+            parentMessage={selectedThreadMessage}
+            onClose={() => {
+              setShowThreadedChat(false);
+              setSelectedThreadMessage(null);
+            }}
+            onThreadUpdate={handleThreadUpdate}
+            userStatuses={{}}
+            receiverType="group"
+          />
+        </View>
       )}
     </SafeAreaView>
   );
@@ -3255,12 +3307,14 @@ const styles = StyleSheet.create({
   },
   // Thread count styles
   threadCountContainer: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    marginTop: 4,
-    borderRadius: 10,
     alignSelf: 'flex-start',
-    backgroundColor: '#F0F0F0',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   threadCountText: {
     fontSize: 12,
@@ -3278,6 +3332,15 @@ const styles = StyleSheet.create({
   fileText: {
     color: '#0277BD',
     fontSize: 14,
+  },
+  fullScreenContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#fff',
+    zIndex: 1000,
   },
 });
 
