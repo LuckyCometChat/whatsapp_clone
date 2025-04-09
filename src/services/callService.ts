@@ -1,7 +1,7 @@
 import { CometChat } from '@cometchat/chat-sdk-react-native';
 import { CometChatCalls } from "@cometchat/calls-sdk-react-native";
 
-// Unique listener ID for call events
+
 const CALL_LISTENER_ID = "CALL_LISTENER_ID";
 
 // Define interface for CometChat Call object
@@ -92,8 +92,7 @@ export const endCall = (sessionId: string) => {
   return CometChat.endCall(sessionId);
 };
 
-// Start a call session (after call is accepted)
-// This is now deprecated in favor of using the CallScreen component directly
+
 export const startCallSession = (sessionId: string): Promise<void> => {
   return new Promise((resolve, reject) => {
     try {
@@ -109,7 +108,7 @@ export const startCallSession = (sessionId: string): Promise<void> => {
       />
       `);
       
-      // For backward compatibility, we'll still try to import and prepare the call data
+    
       import('./cometCall').then(cometCallService => {
         cometCallService.startCallWithSettings(sessionId)
           .then(callData => {
@@ -131,3 +130,4 @@ export const startCallSession = (sessionId: string): Promise<void> => {
     }
   });
 }; 
+

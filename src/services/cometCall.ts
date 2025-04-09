@@ -197,3 +197,98 @@ export const addCallEventListener = (listenerID: string, callbacks: any) => {
 export const removeCallEventListener = (listenerID: string) => {
   return CometChatCalls.removeCallEventListener(listenerID);
 };
+
+// Clear active call session for all scenarios
+export const clearCallSession = async () => {
+  try {
+    // First try to end the current session
+    await CometChatCalls.endSession();
+    
+    // For default call flow, also clear the active call in CometChat
+    const activeCall = await CometChat.getActiveCall();
+    if (activeCall) {
+      await CometChat.clearActiveCall();
+    }
+    
+    console.log("Call session cleared successfully");
+    return true;
+  } catch (error) {
+    console.error("Error clearing call session:", error);
+    // Even if there's an error, we want to ensure clean state
+    try {
+      await CometChat.clearActiveCall();
+    } catch (innerError) {
+      console.error("Failed to clear active call as fallback:", innerError);
+    }
+    return false;
+  }
+};
+
+// Handle call ending for the user who initiated the end
+export const endCall = async () => {
+  try {
+    // Get the active call first
+    const activeCall = await CometChat.getActiveCall();
+    if (activeCall) {
+      // End the call via CometChat with the active call ID
+      await CometChat.endCall(activeCall.getSessionId());
+    }
+    // Also end the session
+    await CometChatCalls.endSession();
+    console.log("Call ended successfully");
+    return true;
+  } catch (error) {
+    console.error("Error ending call:", error);
+    // Try to clear session anyway
+    await clearCallSession();
+    return false;
+  }
+};
+
+// Handle call rejection
+export const rejectCall = async (callId: string, rejectStatus = CometChat.CALL_STATUS.REJECTED) => {
+  try {
+    await CometChat.rejectCall(callId, rejectStatus);
+    // Also clear any active session
+    await clearCallSession();
+    console.log("Call rejected successfully");
+    return true;
+  } catch (error) {
+    console.error("Error rejecting call:", error);
+    // Try to clear session anyway
+    await clearCallSession();
+    return false;
+  }
+};
+
+// Handle call cancellation
+export const cancelCall = async (callId: string) => {
+  try {
+    // Use rejectCall with cancellation status instead of non-existent cancelCall
+    await CometChat.rejectCall(callId, CometChat.CALL_STATUS.CANCELLED);
+    // Also clear any active session
+    await clearCallSession();
+    console.log("Call cancelled successfully");
+    return true;
+  } catch (error) {
+    console.error("Error cancelling call:", error);
+    // Try to clear session anyway
+    await clearCallSession();
+    return false;
+  }
+};
+
+// Enhanced startCallWithSettings to ensure clean session before starting
+export const enhancedStartCallWithSettings = async (sessionId: string, customSettings = {}) => {
+  try {
+    // First clear any existing session to prevent issues
+    await clearCallSession();
+    
+    // Then start a new call with fresh settings
+    console.log("Starting new call with clean session, ID:", sessionId);
+    return await startCallWithSettings(sessionId, customSettings);
+  } catch (error) {
+    console.error("Error starting enhanced call:", error);
+    throw error;
+  }
+};
