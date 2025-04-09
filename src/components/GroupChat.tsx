@@ -61,7 +61,7 @@ interface GroupChatProps {
   onBack: () => void;
 }
 
-// Define a local message type that extends ChatMessage
+
 interface LocalChatMessage extends ChatMessage {
   isLocalOnly?: boolean;
 }
@@ -402,7 +402,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       }
     });
 
-    // Improved edit listener for real-time updates
+    
     editListenerRef.current = subscribeToMessageEdit((editedMessage) => {
       if (
         editedMessage.getReceiverType() === CometChat.RECEIVER_TYPE.GROUP && 
@@ -410,14 +410,12 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       ) {
         console.log("Message edited in real-time:", editedMessage);
         
-        // Get message ID
+
         const messageId = editedMessage.getId().toString();
         
-        // Check if this is a thread message edit
+  
         const parentMessageId = editedMessage.getParentMessageId()?.toString();
         if (parentMessageId) {
-          // For thread messages, we don't need to update anything in the main chat
-          // except maybe refresh the thread count to be safe
           console.log(`Thread message edited for parent ${parentMessageId}, ensuring counts are accurate`);
           getThreadMessageCount(parentMessageId)
             .then(realCount => {
@@ -516,7 +514,6 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         let formattedReactions: {emoji: string; count: number; reactedByMe: boolean}[] = [];
         try {
           formattedReactions = Object.entries(reactions).map(([emoji, users]) => {
-            // Ensure users is an object before using Object.keys
             const userObj = users as Record<string, any>;
             return {
               emoji,
@@ -531,9 +528,9 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           return;
         }
         
-        // Update the message in state
+ 
         setMessages(prevMessages => {
-          // First, check if the message exists in our state
+          
           const messageExists = prevMessages.some(msg => msg.id === message.getId().toString());
           
           if (messageExists) {
@@ -1531,7 +1528,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
   };
   
   const formatMessageTime = (timestamp: number) => {
-    const date = new Date(timestamp);
+    // Make sure timestamp is treated as milliseconds
+    const date = new Date(timestamp * (timestamp < 10000000000 ? 1000 : 1));
     const hours = date.getHours();
     const minutes = date.getMinutes();
     const ampm = hours >= 12 ? 'PM' : 'AM';
