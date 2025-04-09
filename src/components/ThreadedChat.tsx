@@ -965,6 +965,12 @@ const styles = StyleSheet.create({
   },
   headerTextContainer: {
     marginLeft: 10,
+    flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 'auto',
   },
   chatTitle: {
     fontSize: 18,

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { initCometChat } from './src/services/cometChat';
+import { initCometChat as initCometChatCalls } from './src/services/cometCall';
 import { User, Group } from './src/types';
 import Login from './src/components/Login';
 import UserList from './src/components/UserList';
@@ -21,7 +22,9 @@ const App = () => {
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        // Initialize both CometChat SDKs
         await initCometChat();
+        await initCometChatCalls();
         console.log("CometChat initialization successful");
       } catch (error) {
         console.error("CometChat initialization error:", error);

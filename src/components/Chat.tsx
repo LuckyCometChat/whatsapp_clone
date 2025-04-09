@@ -42,6 +42,7 @@ import {
   markMessagesAsRead
 } from './ChatUtils';
 import ThreadedChat from './ThreadedChat';
+import CallButtons from './CallButtons';
 
 interface ChatProps {
   currentUser: User;
@@ -965,6 +966,9 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
               {isTyping ? 'typing...' : userStatus === 'online' ? 'Online' : 'Offline'}
             </Text>
           </View>
+          <View style={styles.headerActions}>
+            <CallButtons receiverId={selectedUser.uid} />
+          </View>
         </View>
       </View>
       <FlatList
@@ -1065,6 +1069,12 @@ const styles = StyleSheet.create({
   },
   headerTextContainer: {
     marginLeft: 10,
+    flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 'auto',
   },
   chatTitle: {
     fontSize: 18,

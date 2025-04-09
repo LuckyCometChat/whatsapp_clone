@@ -11,6 +11,7 @@ A React Native mobile application that replicates the core features of WhatsApp 
 - Message reactions
 - Message editing and deletion
 - Typing indicators
+- Audio and video calling
 
 ## Setup
 
@@ -65,14 +66,16 @@ npm run start
 <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 <uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 ```
 
 ## Required Dependencies
 
-For media handling, ensure these packages are installed:
+For media handling and calling, ensure these packages are installed:
 
 ```
-npm install react-native-image-picker react-native-document-picker react-native-vector-icons
+npm install react-native-image-picker react-native-document-picker react-native-vector-icons react-native-webrtc react-native-callstats react-native-background-timer
 ```
 
 Additional configuration is required for vector icons:
@@ -90,6 +93,15 @@ cd ios && pod install
 
 ### Android
 No additional setup required for Android as it's included in the gradle build.
+
+## Calling Feature
+
+The app supports audio and video calling between users:
+
+1. To use the calling feature, ensure you have installed all required dependencies mentioned above
+2. Tap the 📞 icon for audio calls or 🎥 for video calls in the chat header
+3. The recipient will receive a call notification and can accept or decline
+4. See the CALLING-SETUP.md file for more detailed setup instructions
 
 ## Usage
 
@@ -117,3 +129,9 @@ If media files aren't loading:
 1. Check network connectivity
 2. Verify that media URLs are correctly formatted
 3. Ensure CometChat media tokens are valid
+
+### Calling Issues
+If calling doesn't work:
+1. Make sure you have the required calling dependencies installed
+2. Check that camera and microphone permissions are granted
+3. Refer to CALLING-SETUP.md for detailed troubleshooting
