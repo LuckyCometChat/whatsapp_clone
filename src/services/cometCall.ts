@@ -132,36 +132,25 @@ export const startSession = (sessionId: string) => {
 };
 
 // Prepare for starting a call with token and settings
-export const startCallWithSettings = async (sessionId: string, customSettings = {}) => {
+
+export const startCallWithSettings = async (sessionId: string, settings: any) => {
   try {
-    console.log("Preparing call with session ID:", sessionId);
-    // Generate token for the session
-    const callToken = await generateToken(sessionId);
-    // Create call settings with custom options
-    const callSettings = createCallSettings({ ...customSettings });
-    
-    return { 
-      callToken, 
-      callSettings, 
-      sessionId,
-      // Component instructions
-      componentUsage: `
-        Use this in your React Native component:
-        <View style={{ height: '100%', width: '100%', position: 'relative' }}>
-          <CometChatCalls.Component callSettings={callSettings} callToken={callToken} />
-        </View>
-      `
-    };
+    await CometChatCalls.startCall(sessionId, settings)
   } catch (error) {
-    console.error("Error preparing call:", error);
-    throw error;
+    console.error("Error starting call:", error)
+    throw error
   }
-};
+}
 
 // End a call session
-export const endSession = () => {
-  return CometChatCalls.endSession();
-};
+export const endSession = async () => {
+  try {
+    await CometChatCalls.endSession()
+  } catch (error) {
+    console.error("Error ending session:", error)
+    throw error
+  }
+}
 
 // Utility functions for call controls
 export const switchCamera = () => {

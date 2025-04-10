@@ -54,6 +54,13 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
               }
             },
             style: 'cancel',
+          },
+          {
+            text: '❌',
+            onPress: () => {
+              // This just closes the alert without cancelling the call
+              console.log('Alert closed without cancelling call');
+            },
           }
         ]
       );
@@ -102,6 +109,13 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
               }
             },
             style: 'cancel',
+          },
+          {
+            text: '❌',
+            onPress: () => {
+              // This just closes the alert without cancelling the call
+              console.log('Alert closed without cancelling call');
+            },
           }
         ]
       );
@@ -137,7 +151,7 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
       
       Alert.alert(
         'Incoming Call',
-        `${call?.sender?.name || call?.sender?.uid || 'Someone'} is calling you`,
+        `${call?.sender?.name } is calling you`,
         [
           {
             text: 'Decline',
@@ -166,6 +180,13 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
                   Alert.alert('Call Error', 'Could not accept call');
                 }
               }
+            },
+          },
+          {
+           
+            onPress: () => {
+              // This just closes the alert without accepting or rejecting the call
+              console.log('Alert closed without action');
             },
           },
         ]
