@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet, Alert, Text } from 'react-native';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
-import { initiateUserCall, initCallListeners, removeCallListeners, acceptCall, rejectCall, cancelCall } from '../services/callService';
+import { initiateUserCall, initiateGroupCall, initCallListeners, removeCallListeners, acceptCall, rejectCall, cancelCall } from '../services/callService';
 import CallScreen from './CallScreen';
 
 interface CallButtonsProps {
   receiverId: string;
+  receiverType?: string;
 }
 
-const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
+const CallButtons: React.FC<CallButtonsProps> = ({ receiverId, receiverType = CometChat.RECEIVER_TYPE.USER }) => {
   const [activeCallSession, setActiveCallSession] = useState<string | null>(null);
   const [isAudioCall, setIsAudioCall] = useState(false);
   const [showCallScreen, setShowCallScreen] = useState(false);
@@ -20,7 +21,10 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
 
   const handleAudioCall = async () => {
     try {
-      const call = await initiateUserCall(receiverId, CometChat.CALL_TYPE.AUDIO);
+      const call = receiverType === CometChat.RECEIVER_TYPE.GROUP
+        ? await initiateGroupCall(receiverId, CometChat.CALL_TYPE.AUDIO)
+        : await initiateUserCall(receiverId, CometChat.CALL_TYPE.AUDIO);
+      
       console.log('Audio call initiated:', call);
       
       const callObj = call as any;
@@ -58,7 +62,6 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
           {
             text: '❌',
             onPress: () => {
-              // This just closes the alert without cancelling the call
               console.log('Alert closed without cancelling call');
             },
           }
@@ -66,22 +69,22 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
       );
     } catch (error) {
       console.error('Error starting audio call:', error);
-      Alert.alert('Call Failed', 'Could not initiate audio call. CometChat calling module not found. Please add CometChat calling dependency and try again.');
+      Alert.alert('Call Failed', 'Could not initiate audio call. Please try again.');
     }
   };
 
-  // Function to start a video call
   const handleVideoCall = async () => {
     try {
-      const call = await initiateUserCall(receiverId, CometChat.CALL_TYPE.VIDEO);
+      const call = receiverType === CometChat.RECEIVER_TYPE.GROUP
+        ? await initiateGroupCall(receiverId, CometChat.CALL_TYPE.VIDEO)
+        : await initiateUserCall(receiverId, CometChat.CALL_TYPE.VIDEO);
+      
       console.log('Video call initiated:', call);
       
-      // Get session ID safely - we need to cast to any to access properties
       const callObj = call as any;
       let sessionId = '';
       
       try {
-        // Try different ways to get session ID
         if (callObj && typeof callObj.getSessionId === 'function') {
           sessionId = callObj.getSessionId();
         } else if (callObj && callObj.sessionId) {
@@ -113,7 +116,6 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
           {
             text: '❌',
             onPress: () => {
-              // This just closes the alert without cancelling the call
               console.log('Alert closed without cancelling call');
             },
           }
@@ -121,10 +123,9 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId }) => {
       );
     } catch (error) {
       console.error('Error starting video call:', error);
-      Alert.alert('Call Failed', 'Could not initiate video call. CometChat calling module not found. Please add CometChat calling dependency and try again.');
+      Alert.alert('Call Failed', 'Could not initiate video call. Please try again.');
     }
   };
-
 
   React.useEffect(() => {
     // Handle incoming call

@@ -54,6 +54,7 @@ import DocumentPicker from 'react-native-document-picker';
 import Video from 'react-native-video';
 import ThreadedChat from './ThreadedChat';
 import Icon from 'react-native-vector-icons/Ionicons';
+import CallButtons from './CallButtons';
 
 interface GroupChatProps {
   currentUser: User;
@@ -227,7 +228,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           }
           
           // Check for deleted messages
-          const isDeleted = (message as any).getDeletedAt && (message as any).getDeletedAt();
+          const isDeleted = !!(message as any).getDeletedAt && !!(message as any).getDeletedAt();
           
           // Properly check for message status
           let status: 'sent' | 'delivered' | 'seen' = 'sent';
@@ -2473,6 +2474,12 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                 }
               </Text>
             </View>
+            <View style={styles.headerActions}>
+              <CallButtons 
+                receiverId={selectedGroup.guid} 
+                receiverType={CometChat.RECEIVER_TYPE.GROUP}
+              />
+            </View>
           </TouchableOpacity>
         </View>
         
@@ -2654,6 +2661,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#D0D0D0',
     marginTop: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
   },
   messagesList: {
     paddingHorizontal: 12,
