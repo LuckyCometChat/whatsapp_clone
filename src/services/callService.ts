@@ -49,12 +49,11 @@ export const initCallListeners = (
   );
 };
 
-// Remove call listeners
+
 export const removeCallListeners = () => {
   CometChat.removeCallListener(CALL_LISTENER_ID);
 };
 
-// Initiate a call to a user
 export const initiateUserCall = (receiverId: string, callType: string) => {
   const receiverType = CometChat.RECEIVER_TYPE.USER;
   const call = new CometChat.Call(receiverId, callType, receiverType);
@@ -76,7 +75,7 @@ export const acceptCall = (sessionId: string) => {
 };
 
 // Reject an incoming call
-export const rejectCall = (sessionId: string) => {
+export const rejectCall = (sessionId: string, p0: string) => {
   const status = CometChat.CALL_STATUS.REJECTED;
   return CometChat.rejectCall(sessionId, status);
 };

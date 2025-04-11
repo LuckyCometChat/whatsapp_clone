@@ -4,6 +4,7 @@ PODS:
     - React-Core
     - react-native-webrtc
   - DoubleConversion (1.1.6)
+  - DVAssetLoaderDelegate (0.3.3)
   - fast_float (6.1.4)
   - FBLazyVector (0.78.1)
   - fmt (11.0.2)
@@ -1244,27 +1245,17 @@ PODS:
     - ReactCommon/turbomodule/core
   - react-native-background-timer (2.4.1):
     - React-Core
-  - react-native-document-picker (9.3.1):
-    - DoubleConversion
-    - glog
-    - hermes-engine
-    - RCT-Folly (= 2024.11.18.00)
-    - RCTRequired
-    - RCTTypeSafety
+  - react-native-cometchat-ui-kit (4.3.25):
     - React-Core
-    - React-debug
-    - React-Fabric
-    - React-featureflags
-    - React-graphics
-    - React-ImageManager
-    - React-NativeModulesApple
-    - React-RCTFabric
-    - React-rendererdebug
-    - React-utils
-    - ReactCodegen
-    - ReactCommon/turbomodule/bridging
-    - ReactCommon/turbomodule/core
-    - Yoga
+    - react-native-cometchat-ui-kit/Video (= 4.3.25)
+    - react-native-cometchat-ui-kit/VideoCaching (= 4.3.25)
+  - react-native-cometchat-ui-kit/Video (4.3.25):
+    - React-Core
+  - react-native-cometchat-ui-kit/VideoCaching (4.3.25):
+    - DVAssetLoaderDelegate (~> 0.3.1)
+    - React-Core
+    - react-native-cometchat-ui-kit/Video
+    - SPTPersistentCache (~> 1.1.0)
   - react-native-image-picker (8.2.0):
     - DoubleConversion
     - glog
@@ -1818,6 +1809,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - Yoga
   - SocketRocket (0.7.1)
+  - SPTPersistentCache (1.1.0)
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -1862,7 +1854,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-background-timer (from `../node_modules/react-native-background-timer`)
-  - react-native-document-picker (from `../node_modules/react-native-document-picker`)
+  - "react-native-cometchat-ui-kit (from `../node_modules/@cometchat/chat-uikit-react-native`)"
   - react-native-image-picker (from `../node_modules/react-native-image-picker`)
   - "react-native-netinfo (from `../node_modules/@react-native-community/netinfo`)"
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
@@ -1904,8 +1896,10 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - DVAssetLoaderDelegate
     - JitsiWebRTC
     - SocketRocket
+    - SPTPersistentCache
 
 EXTERNAL SOURCES:
   boost:
@@ -1987,8 +1981,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-background-timer:
     :path: "../node_modules/react-native-background-timer"
-  react-native-document-picker:
-    :path: "../node_modules/react-native-document-picker"
+  react-native-cometchat-ui-kit:
+    :path: "../node_modules/@cometchat/chat-uikit-react-native"
   react-native-image-picker:
     :path: "../node_modules/react-native-image-picker"
   react-native-netinfo:
@@ -2070,6 +2064,7 @@ SPEC CHECKSUMS:
   boost: 7e761d76ca2ce687f7cc98e698152abd03a18f90
   cometchat-calls-sdk-react-native: ab4f565d91a27ad035e6b5b5ef08ec1a6f973bc4
   DoubleConversion: cb417026b2400c8f53ae97020b2be961b59470cb
+  DVAssetLoaderDelegate: 0caec20e4e08b8560b691131539e9180024d4bce
   fast_float: 06eeec4fe712a76acc9376682e4808b05ce978b6
   FBLazyVector: bba368dacede4c9dec7a58c9be5a2d3e9ea30cc7
   fmt: a40bb5bd0294ea969aaaba240a927bd33d878cdd
@@ -2107,7 +2102,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 39e87693178fd6483bb5ca8b851fae362d49409a
   React-microtasksnativemodule: b740ebae7fad70aa78bc24cc0dfc15ac9637b6eb
   react-native-background-timer: 4638ae3bee00320753647900b21260b10587b6f7
-  react-native-document-picker: bfe9c7d72908d2faba56a4765373c6367090ae2e
+  react-native-cometchat-ui-kit: b867876700b08cdc4db489a5875dce1892c57ffe
   react-native-image-picker: df2b20cdfa981f7288f4019774d9baa26a4772c1
   react-native-netinfo: cec9c4e86083cb5b6aba0e0711f563e2fbbff187
   react-native-safe-area-context: 0f14bce545abcdfbff79ce2e3c78c109f0be283e
@@ -2146,6 +2141,7 @@ SPEC CHECKSUMS:
   RNScreens: b32d0d59b53acb574fa795a9343591ef4e7ab7c2
   RNVectorIcons: bd818296a51dc2bb8c3bd97a3ca399df1afe216d
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
+  SPTPersistentCache: df36ea46762d7cf026502bbb86a8b79d0080dff4
   Yoga: b94ff2d7559cb66837c97a3f394ddb817faad4d6
 
 PODFILE CHECKSUM: 8c0191e41fba5521a20fe4216529990b306c13c4

@@ -35,10 +35,10 @@ const CallScreen: React.FC<CallScreenProps> = ({
   const handleCallEnd = useCallback(() => {
     console.log("Ending call and cleaning up")
     try {
-      // End the session according to CometChat docs
+    
       CometChatCalls.endSession()
       
-      // If needed, clear active call from CometChat
+  
       if (sessionId) {
         CometChat.endCall(sessionId).catch(err => 
           console.log("Error ending call in CometChat:", err)
@@ -47,9 +47,7 @@ const CallScreen: React.FC<CallScreenProps> = ({
     } catch (err) {
       console.error("Error ending session:", err)
     } finally {
-      // Always notify parent component that call has ended
       onCallEnded()
-      // Reset local state
       setCallToken(null)
       setCallSettings(null)
       setIncomingCall(null)
@@ -68,7 +66,6 @@ const CallScreen: React.FC<CallScreenProps> = ({
       console.log("Accepting call with sessionID:", sessionId)
       await CometChat.acceptCall(sessionId)
       
-      // Call will be setup by the main useEffect after session is accepted
     } catch (err: any) {
       console.error("Error accepting call:", err)
       setError(`Failed to accept call: ${err.message || "Unknown error"}`)
@@ -215,7 +212,6 @@ const CallScreen: React.FC<CallScreenProps> = ({
 
     return () => {
       mounted = false
-      // End the session when component unmounts if we had an active call
       if (callToken) {
         console.log("Ending call session on unmount")
         handleCallEnd()
