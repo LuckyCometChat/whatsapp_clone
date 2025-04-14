@@ -20,7 +20,7 @@ export const updateMessage = async (message: CometChat.BaseMessage) => {
   }
 };
 
-// Add a reactionToMessage function to manage reactions more directly
+
 export const addReactionToMessage = async (messageId: string, emoji: string, uid: string, name: string) => {
   try {
     // First get the message

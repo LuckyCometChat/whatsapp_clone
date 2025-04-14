@@ -372,7 +372,6 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       
       if (parentMessageId) {
         // This is a thread message being deleted
-        // Update the parent message's thread count
         console.log(`Thread message deleted: updating count for parent message ${parentMessageId}`);
         
         // Get the real thread count to ensure accuracy
@@ -1033,7 +1032,6 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         // Make the API call
         await deleteGroupMessage(messageId);
         console.log(`Successfully deleted message with ID: ${messageId}`);
-        // No need to reload messages as the delete listener will update the state
       } catch (apiError) {
         console.error(`API error when deleting message with ID ${messageId}:`, apiError);
         Alert.alert(
@@ -1278,15 +1276,19 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Cancel', 'Take Photo', 'Choose Image', 'Share Document'],
+          options: ['Cancel', 'Take Photo', 'Choose Image', 'Choose Video', 'Choose Audio', 'Share Document'],
           cancelButtonIndex: 0,
         },
         (buttonIndex) => {
           if (buttonIndex === 1) {
             handleCameraPress();
           } else if (buttonIndex === 2) {
-            handleGalleryPress();
+            handleGalleryPress('photo');
           } else if (buttonIndex === 3) {
+            handleGalleryPress('video');
+          } else if (buttonIndex === 4) {
+            handleGalleryPress('audio');
+          } else if (buttonIndex === 5) {
             handleDocumentPress();
           }
         }
@@ -1303,26 +1305,29 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     setIsPicking(true);
     
     try {
-      // Request camera permission
-      const hasPermission = await requestCameraPermission();
-      if (!hasPermission) {
-        Alert.alert('Permission Denied', 'Cannot access camera');
-        setIsPicking(false);
-        return;
-      }
+      // Permission check removed as requested
       
-      const result = await ImagePicker.launchCamera({
-        mediaType: 'mixed',
+      const options: ImagePicker.CameraOptions = {
+        mediaType: 'photo',
         quality: 0.8,
-      });
+      };
+      
+      console.log('Launching camera with options:', options);
+      
+      const result = await ImagePicker.launchCamera(options);
+      console.log('Camera result:', result);
       
       if (result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        console.log('Captured asset:', asset);
         
         if (asset.uri) {
+          const mediaType = asset.type || 'image/jpeg';
+          console.log('Setting media preview with type:', mediaType);
+          
           setMediaPreview({
             uri: asset.uri,
-            type: asset.type || 'image/jpeg'
+            type: mediaType
           });
         }
       }
@@ -1334,35 +1339,65 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     }
   };
   
-  const handleGalleryPress = async () => {
+  const handleGalleryPress = async (type?: 'photo' | 'video' | 'audio') => {
     if (isPicking) return;
     
     setShowAttachmentOptions(false);
     setIsPicking(true);
     
     try {
-      // Request storage permission
-      const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        Alert.alert('Permission Denied', 'Cannot access gallery');
-        setIsPicking(false);
+      console.log('Starting media picker for type:', type);
+      
+      const options: ImagePicker.ImageLibraryOptions = {
+        mediaType: type === 'video' ? 'video' : type === 'audio' ? 'mixed' : 'photo',
+        quality: 0.8,
+        selectionLimit: 1,
+        includeBase64: false,
+      };
+      
+      console.log('Launching image library with options:', options);
+      
+      const result = await ImagePicker.launchImageLibrary(options);
+      console.log('Image picker result:', JSON.stringify(result, null, 2));
+      
+      if (result.didCancel) {
+        console.log('User cancelled image picker');
         return;
       }
       
-      const result = await ImagePicker.launchImageLibrary({
-        mediaType: 'mixed',
-        quality: 0.8,
-      });
+      if (result.errorCode) {
+        console.error('ImagePicker Error:', result.errorMessage);
+        Alert.alert('Error', result.errorMessage || 'Failed to pick media');
+        return;
+      }
       
       if (result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        console.log('Selected asset:', JSON.stringify(asset, null, 2));
         
         if (asset.uri) {
+          const mediaType = asset.type || 
+            (type === 'photo' ? 'image/jpeg' : 
+             type === 'video' ? 'video/mp4' : 
+             'audio/mpeg');
+          
+          console.log('Setting media preview with:', {
+            uri: asset.uri,
+            type: mediaType,
+            fileSize: asset.fileSize,
+            fileName: asset.fileName
+          });
+          
           setMediaPreview({
             uri: asset.uri,
-            type: asset.type || 'image/jpeg'
+            type: mediaType
           });
+        } else {
+          console.error('No URI in selected asset');
+          Alert.alert('Error', 'Selected media has no URI');
         }
+      } else {
+        console.log('No assets selected');
       }
     } catch (error) {
       console.error("Error picking media from gallery:", error);
@@ -1379,13 +1414,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     setIsPicking(true);
     
     try {
-      // Request storage permission
-      const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        Alert.alert('Permission Denied', 'Cannot access files');
-        setIsPicking(false);
-        return;
-      }
+      // Permission check removed as requested
       
       const result = await DocumentPicker.pick({
         type: [DocumentPicker.types.allFiles],
@@ -1414,6 +1443,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     setIsLoading(true);
     
     try {
+      console.log('Starting to send media message with preview:', mediaPreview);
 
       const uriParts = mediaPreview.uri.split('/');
       const fileName = uriParts[uriParts.length - 1] || `media_${Date.now()}`;
@@ -1423,6 +1453,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         type: mediaPreview.type,
         name: fileName
       };
+      
+      console.log('Prepared media file:', mediaFile);
       
       // Determine message type
       let messageType;
@@ -1441,6 +1473,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         messageText = 'File';
       }
       
+      console.log('Determined message type:', { messageType, messageText });
 
       const tempId = `temp_${Date.now()}`;
       const localMessage: LocalChatMessage = {
@@ -1456,22 +1489,24 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         status: 'sent',
         reactions: [],
         attachment: {
-          url: mediaPreview.uri, // Use local URI for immediate display
+          url: mediaPreview.uri, 
           type: mediaPreview.type,
           name: fileName
         },
-        isLocalOnly: true // Flag to identify this is a local message
+        isLocalOnly: true 
       };
       
-      // Add local message to state
+      console.log('Created local message:', localMessage);
+  
       setMessages(prevMessages => [...prevMessages, localMessage]);
       
-      // Scroll to the bottom to show the message
       if (flatListRef.current) {
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
+      
+      console.log('Sending media message to group:', selectedGroup.guid);
       
       // Actually send the message
       const sentMessage = await sendGroupMediaMessage(
@@ -1480,9 +1515,11 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         messageType
       );
       
+      console.log('Media message sent successfully:', sentMessage);
+      
       // Once the message is sent, update the local message with the real one
       if (sentMessage) {
-        // Update message with the real one
+        console.log('Updating local message with sent message');
         setMessages(prevMessages => 
           prevMessages.map(msg => 
             (msg as any).isLocalOnly && msg.id === tempId 
@@ -1493,15 +1530,20 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
               : msg
           )
         );
+      } else {
+        console.error('No sent message returned from sendGroupMediaMessage');
+        throw new Error('Failed to send media message');
       }
       
       // Clear the media preview
       setMediaPreview(null);
     } catch (error) {
       console.error("Error sending media message:", error);
-      Alert.alert("Error", "Failed to send media. Please try again.");
-      
-      // Remove the temporary message on error
+      Alert.alert(
+        "Error", 
+        "Failed to send media. Please check your internet connection and try again."
+      );
+      // Remove the local message on error
       setMessages(prevMessages => prevMessages.filter(msg => !(msg as any).isLocalOnly));
     } finally {
       setIsLoading(false);
@@ -1563,10 +1605,8 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
     const isMediaMessage = item.type === CometChat.MESSAGE_TYPE.IMAGE || 
                           item.type === CometChat.MESSAGE_TYPE.VIDEO || 
                           item.type === CometChat.MESSAGE_TYPE.AUDIO ||
-                          item.type === CometChat.MESSAGE_TYPE.FILE;
-    // Use the extended type for isLocalOnly  
+                          item.type === CometChat.MESSAGE_TYPE.FILE; 
     const isLocalOnlyMessage = item.isLocalOnly === true;
-    // Check if message has thread replies
     const hasThreads = item.threadCount !== undefined && item.threadCount > 0;
 
     const showDateHeading =
@@ -1784,7 +1824,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
   const handleThreadUpdate = (messageId: string, threadCount: number) => {
     console.log(`Updating thread count for message ${messageId} to ${threadCount}`);
     
-    // Immediately update the count in the UI for better responsiveness
+
     setMessages(prevMessages => 
       prevMessages.map(msg => 
         msg.id === messageId 
@@ -1793,12 +1833,10 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
       )
     );
     
-    // Get the real thread count to ensure accuracy across all clients
     getThreadMessageCount(messageId)
       .then(realCount => {
         console.log(`Got real thread count for ${messageId}: ${realCount}`);
         
-        // After a slight delay, update again with the real count
         setTimeout(() => {
           setMessages(prevMessages => 
             prevMessages.map(msg => 
@@ -1951,13 +1989,35 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           
           <TouchableOpacity 
             style={styles.attachmentOption}
-            onPress={handleGalleryPress}
+            onPress={() => handleGalleryPress('photo')}
             disabled={isPicking}
           >
             <View style={styles.attachmentIconCircle}>
               <Text style={styles.attachmentIconText}>🖼️</Text>
             </View>
             <Text style={styles.attachmentText}>Gallery</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.attachmentOption}
+            onPress={() => handleGalleryPress('video')}
+            disabled={isPicking}
+          >
+            <View style={styles.attachmentIconCircle}>
+              <Text style={styles.attachmentIconText}>📹</Text>
+            </View>
+            <Text style={styles.attachmentText}>Video</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.attachmentOption}
+            onPress={() => handleGalleryPress('audio')}
+            disabled={isPicking}
+          >
+            <View style={styles.attachmentIconCircle}>
+              <Text style={styles.attachmentIconText}>🎵</Text>
+            </View>
+            <Text style={styles.attachmentText}>Audio</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -2583,7 +2643,6 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             }}
             parentMessage={selectedThreadMessage}
             onClose={() => {
-              // When closing the thread, refresh the thread count to ensure it's accurate
               if (selectedThreadMessage) {
                 getThreadMessageCount(selectedThreadMessage.id)
                   .then(realCount => {

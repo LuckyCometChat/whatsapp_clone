@@ -559,18 +559,35 @@ export const requestCameraPermission = async () => {
 export const requestStoragePermission = async () => {
   if (Platform.OS === 'android') {
     try {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-        {
-          title: "Storage Permission",
-          message: "This app needs access to your storage to select media.",
-          buttonNeutral: "Ask Me Later",
-          buttonNegative: "Cancel",
-          buttonPositive: "OK"
-        }
-      );
-      
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+      // For Android 13 (API level 33) and above, we need to request specific media permissions
+      if (Platform.Version >= 33) {
+        const permissions = [
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+          PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO
+        ];
+
+        const results = await PermissionsAndroid.requestMultiple(permissions);
+        
+        // Check if all permissions are granted
+        return Object.values(results).every(
+          result => result === PermissionsAndroid.RESULTS.GRANTED
+        );
+      } else {
+        // For Android 12 and below, use READ_EXTERNAL_STORAGE
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+          {
+            title: "Storage Permission",
+            message: "This app needs access to your storage to select media.",
+            buttonNeutral: "Ask Me Later",
+            buttonNegative: "Cancel",
+            buttonPositive: "OK"
+          }
+        );
+        
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      }
     } catch (err) {
       console.warn(err);
       return false;
@@ -655,6 +672,7 @@ export const handleAudioPress = async (
   }
 
   try {
+    // Try using DocumentPicker first
     const result = await DocumentPicker.pick({
       type: [DocumentPicker.types.audio],
     });
@@ -668,7 +686,39 @@ export const handleAudioPress = async (
     if (DocumentPicker.isCancel(err)) {
       console.log('User cancelled document picker');
     } else {
-      console.error('Error selecting audio:', err);
+      console.error('Error selecting audio with DocumentPicker:', err);
+      
+      // Fallback to ImagePicker for audio files
+      try {
+        const options: ImagePicker.ImageLibraryOptions = {
+          mediaType: 'mixed', // Allow mixed media types
+          includeBase64: false,
+          quality: 1,
+        };
+
+        ImagePicker.launchImageLibrary(options, (response) => {
+          if (response.didCancel) {
+            console.log('User cancelled audio selection');
+          } else if (response.errorCode) {
+            console.log('Audio Selection Error: ', response.errorMessage);
+            Alert.alert('Error', 'Failed to select audio file. Please try again.');
+          } else if (response.assets && response.assets.length > 0 && response.assets[0].uri) {
+            const uri = response.assets[0].uri;
+            const type = response.assets[0].type || 'audio/mpeg';
+            
+            // Check if the selected file is an audio file
+            if (type.startsWith('audio/')) {
+              handleSendMediaMessage(uri, type, 'audio');
+              setShowAttachmentOptions(false);
+            } else {
+              Alert.alert('Invalid File', 'Please select an audio file.');
+            }
+          }
+        });
+      } catch (fallbackErr) {
+        console.error('Error in fallback audio selection:', fallbackErr);
+        Alert.alert('Error', 'Failed to select audio file. Please try again.');
+      }
     }
   }
 };
