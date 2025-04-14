@@ -5,7 +5,7 @@ import { CometChatCalls } from "@cometchat/calls-sdk-react-native";
 const CALL_LISTENER_ID = "CALL_LISTENER_ID";
 
 // Define interface for CometChat Call object
-interface CometChatCall {
+export interface CometChatCall {
   sessionId: string;
   receiverId: string;
   receiverType: string;
@@ -74,16 +74,25 @@ export const acceptCall = (sessionId: string) => {
   return CometChat.acceptCall(sessionId);
 };
 
-// Reject an incoming call
-export const rejectCall = (sessionId: string, p0: string) => {
-  const status = CometChat.CALL_STATUS.REJECTED;
+// Reject a call with a specific status
+export const rejectCall = (sessionId: string, status: string) => {
+  if (!sessionId || !status) {
+    throw new Error('Both sessionId and status are required to reject a call');
+  }
   return CometChat.rejectCall(sessionId, status);
+};
+
+// Helper function to reject an incoming call
+export const rejectIncomingCall = (sessionId: string) => {
+  return rejectCall(sessionId, CometChat.CALL_STATUS.REJECTED);
 };
 
 // Cancel an outgoing call
 export const cancelCall = (sessionId: string) => {
-  const status = CometChat.CALL_STATUS.CANCELLED;
-  return CometChat.rejectCall(sessionId, status);
+  if (!sessionId) {
+    throw new Error('Session ID is required to cancel a call');
+  }
+  return CometChat.rejectCall(sessionId, CometChat.CALL_STATUS.CANCELLED);
 };
 
 // End an ongoing call

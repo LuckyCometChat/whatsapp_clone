@@ -123,6 +123,11 @@ export const convertCometChatMessageToChat = (msg: CometChat.BaseMessage): ChatM
       console.log("Skipping action message");
       return null;
     }
+
+    if((msg as any).getType?.() === "call") {
+      console.log("Skipping call message");
+      return null;
+    }
     
     const sender = msg.getSender?.();
     if (!sender || typeof sender !== 'object') {

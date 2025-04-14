@@ -1,253 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, TouchableOpacity, StyleSheet, Alert, Text } from 'react-native';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
-import { initiateUserCall, initiateGroupCall, initCallListeners, removeCallListeners, acceptCall, rejectCall, cancelCall } from '../services/callService';
+import { sendMessage, sendGroupMessage } from '../services/cometChat';
+import { initiateUserCall, initiateGroupCall, initCallListeners, removeCallListeners, acceptCall, rejectCall, cancelCall, CometChatCall } from '../services/callService';
 import CallScreen from './CallScreen';
 
 interface CallButtonsProps {
   receiverId: string;
-  receiverType?: string;
+  receiverType: string;
 }
 
-const CallButtons: React.FC<CallButtonsProps> = ({ receiverId, receiverType = CometChat.RECEIVER_TYPE.USER }) => {
-  const [activeCallSession, setActiveCallSession] = useState<string | null>(null);
-  const [isAudioCall, setIsAudioCall] = useState(false);
+const CallButtons: React.FC<CallButtonsProps> = ({ receiverId, receiverType }) => {
   const [showCallScreen, setShowCallScreen] = useState(false);
+  const [activeCallSession, setActiveCallSession] = useState<string | null>(null);
+  const [activeCallType, setActiveCallType] = useState<string | null>(null);
 
-  const handleCallEnded = () => {
+  const handleCallEnded = (call: CometChatCall) => {
+    console.log("Call ended:", call);
+    setShowCallScreen(false);
+    setActiveCallSession(null);
+    
+    // Only send a call ended message if we were part of the call
+    if (call && call.getSessionId && call.getSessionId() === activeCallSession) {
+      // Send a single call ended message
+      const message = {
+        type: 'call',
+        status: 'ended',
+        sessionId: call.getSessionId(),
+        timestamp: new Date().getTime()
+      };
+      
+      // Use the appropriate method to send the message based on receiver type
+      if (receiverType === CometChat.RECEIVER_TYPE.GROUP) {
+        sendGroupMessage(receiverId, JSON.stringify(message));
+      } else {
+        sendMessage(receiverId, JSON.stringify(message));
+      }
+    }
+  };
+
+  const handleIncomingCall = (call: CometChatCall) => {
+    console.log("Incoming call:", call);
+    setActiveCallSession(call.getSessionId());
+    setActiveCallType(call.getType());
+    setShowCallScreen(true);
+  };
+
+  const handleOutgoingCallAccepted = (call: CometChatCall) => {
+    console.log("Outgoing call accepted:", call);
+    setActiveCallSession(call.getSessionId());
+    setActiveCallType(call.getType());
+    setShowCallScreen(true);
+  };
+
+  const handleOutgoingCallRejected = (call: CometChatCall) => {
+    console.log("Outgoing call rejected:", call);
     setShowCallScreen(false);
     setActiveCallSession(null);
   };
 
-  const handleAudioCall = async () => {
-    try {
-      const call = receiverType === CometChat.RECEIVER_TYPE.GROUP
-        ? await initiateGroupCall(receiverId, CometChat.CALL_TYPE.AUDIO)
-        : await initiateUserCall(receiverId, CometChat.CALL_TYPE.AUDIO);
-      
-      console.log('Audio call initiated:', call);
-      
-      const callObj = call as any;
-      let sessionId = '';
-      
-      try {
-        if (callObj && typeof callObj.getSessionId === 'function') {
-          sessionId = callObj.getSessionId();
-        } else if (callObj && callObj.sessionId) {
-          sessionId = callObj.sessionId;
-        } else if (callObj && callObj.getSession) {
-          sessionId = callObj.getSession();
-        } else if (callObj && callObj.getId) {
-          sessionId = callObj.getId().toString();
-        }
-        
-        console.log('Using audio call session ID:', sessionId);
-      } catch (error) {
-        console.error('Error getting session ID:', error);
-      }
-      
-      Alert.alert(
-        'Calling',
-        `Audio call to ${receiverId} initiated`,
-        [
-          {
-            text: 'Cancel',
-            onPress: () => {
-              if (sessionId) {
-                cancelCall(sessionId);
-              }
-            },
-            style: 'cancel',
-          },
-          {
-            text: '❌',
-            onPress: () => {
-              console.log('Alert closed without cancelling call');
-            },
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error starting audio call:', error);
-      Alert.alert('Call Failed', 'Could not initiate audio call. Please try again.');
-    }
+  const handleIncomingCallCancelled = (call: CometChatCall) => {
+    console.log("Incoming call cancelled:", call);
+    setShowCallScreen(false);
+    setActiveCallSession(null);
   };
 
-  const handleVideoCall = async () => {
-    try {
-      const call = receiverType === CometChat.RECEIVER_TYPE.GROUP
-        ? await initiateGroupCall(receiverId, CometChat.CALL_TYPE.VIDEO)
-        : await initiateUserCall(receiverId, CometChat.CALL_TYPE.VIDEO);
-      
-      console.log('Video call initiated:', call);
-      
-      const callObj = call as any;
-      let sessionId = '';
-      
-      try {
-        if (callObj && typeof callObj.getSessionId === 'function') {
-          sessionId = callObj.getSessionId();
-        } else if (callObj && callObj.sessionId) {
-          sessionId = callObj.sessionId;
-        } else if (callObj && callObj.getSession) {
-          sessionId = callObj.getSession();
-        } else if (callObj && callObj.getId) {
-          sessionId = callObj.getId().toString();
-        }
-        
-        console.log('Using video call session ID:', sessionId);
-      } catch (error) {
-        console.error('Error getting session ID:', error);
-      }
-      
-      Alert.alert(
-        'Calling',
-        `Video call to ${receiverId} initiated`,
-        [
-          {
-            text: 'Cancel',
-            onPress: () => {
-              if (sessionId) {
-                cancelCall(sessionId);
-              }
-            },
-            style: 'cancel',
-          },
-          {
-            text: '❌',
-            onPress: () => {
-              console.log('Alert closed without cancelling call');
-            },
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error starting video call:', error);
-      Alert.alert('Call Failed', 'Could not initiate video call. Please try again.');
-    }
-  };
-
-  React.useEffect(() => {
-    // Handle incoming call
-    const handleIncomingCall = (call: any) => {
-      // Get session ID safely
-      let sessionId = '';
-      
-      try {
-        // Try different ways to get session ID
-        if (call && typeof call.getSessionId === 'function') {
-          sessionId = call.getSessionId();
-        } else if (call && call.sessionId) {
-          sessionId = call.sessionId;
-        } else if (call && call.getSession) {
-          sessionId = call.getSession();
-        } else if (call && call.getId) {
-          sessionId = call.getId().toString();
-        }
-        
-        console.log('Incoming call session ID:', sessionId);
-      } catch (error) {
-        console.error('Error getting session ID for incoming call:', error);
-      }
-      
-      Alert.alert(
-        'Incoming Call',
-        `${call?.sender?.name } is calling you`,
-        [
-          {
-            text: 'Decline',
-            onPress: () => {
-              if (sessionId) {
-                rejectCall(sessionId);
-              }
-            },
-            style: 'cancel',
-          },
-          {
-            text: 'Accept',
-            onPress: async () => {
-              if (sessionId) {
-                try {
-                  await acceptCall(sessionId);
-                  console.log('Call accepted, starting call screen with session ID:', sessionId);
-                  
-                  // Check if it's an audio or video call
-                  const isAudio = call?.type === CometChat.CALL_TYPE.AUDIO;
-                  setIsAudioCall(isAudio);
-                  setActiveCallSession(sessionId);
-                  setShowCallScreen(true);
-                } catch (error) {
-                  console.error('Error accepting call:', error);
-                  Alert.alert('Call Error', 'Could not accept call');
-                }
-              }
-            },
-          },
-          {
-           
-            onPress: () => {
-              // This just closes the alert without accepting or rejecting the call
-              console.log('Alert closed without action');
-            },
-          },
-        ]
-      );
-    };
-
-    // Handle outgoing call accepted
-    const handleOutgoingCallAccepted = async (call: any) => {
-      // Get session ID safely
-      let sessionId = '';
-      
-      try {
-        // Try different ways to get session ID
-        if (call && typeof call.getSessionId === 'function') {
-          sessionId = call.getSessionId();
-        } else if (call && call.sessionId) {
-          sessionId = call.sessionId;
-        } else if (call && call.getSession) {
-          sessionId = call.getSession();
-        } else if (call && call.getId) {
-          sessionId = call.getId().toString();
-        }
-        
-        console.log('Outgoing call accepted with session ID:', sessionId);
-      } catch (error) {
-        console.error('Error getting session ID for accepted call:', error);
-      }
-      
-      if (sessionId) {
-        try {
-          // Check if it's an audio or video call
-          const isAudio = call?.type === CometChat.CALL_TYPE.AUDIO;
-          setIsAudioCall(isAudio);
-          setActiveCallSession(sessionId);
-          setShowCallScreen(true);
-        } catch (error) {
-          console.error('Error starting call session:', error);
-          Alert.alert('Call Error', 'Could not start call session');
-        }
-      }
-    };
-
-    // Handle outgoing call rejected
-    const handleOutgoingCallRejected = (call: any) => {
-      Alert.alert('Call Rejected', 'The recipient rejected your call');
-    };
-
-    // Handle incoming call cancelled
-    const handleIncomingCallCancelled = (call: any) => {
-      Alert.alert('Call Cancelled', 'The caller cancelled the call');
-    };
-
-    // Handle call ended
-    const handleCallEnded = (call: any) => {
-      setShowCallScreen(false);
-      setActiveCallSession(null);
-      Alert.alert('Call Ended', 'The call has ended');
-    };
-
-    // Initialize listeners
+  // Initialize listeners
+  useEffect(() => {
     initCallListeners(
       handleIncomingCall,
       handleOutgoingCallAccepted,
@@ -256,28 +75,47 @@ const CallButtons: React.FC<CallButtonsProps> = ({ receiverId, receiverType = Co
       handleCallEnded
     );
 
-    // Clean up listeners when component unmounts
     return () => {
       removeCallListeners();
     };
   }, [receiverId]);
 
+  const handleStartCall = async (callType: string) => {
+    try {
+      let call;
+      if (receiverType === CometChat.RECEIVER_TYPE.GROUP) {
+        call = await initiateGroupCall(receiverId, callType);
+      } else {
+        call = await initiateUserCall(receiverId, callType);
+      }
+      setActiveCallSession(call.getSessionId());
+      setActiveCallType(call.getType());
+      setShowCallScreen(true);
+    } catch (error) {
+      console.error("Error starting call:", error);
+      Alert.alert("Error", "Failed to start call");
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.button} onPress={handleAudioCall}>
-        <Text style={styles.call}>📞</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.button} onPress={handleVideoCall}>
+      <TouchableOpacity style={styles.button} onPress={() => handleStartCall(CometChat.CALL_TYPE.VIDEO)}>
         <Text style={styles.video}>🎥</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.button} onPress={() => handleStartCall(CometChat.CALL_TYPE.AUDIO)}>
+        <Text style={styles.call}>📞</Text>
       </TouchableOpacity>
 
       {/* Call Screen Modal */}
-      {activeCallSession && (
+      {showCallScreen && activeCallSession && (
         <CallScreen
           sessionId={activeCallSession}
           isVisible={showCallScreen}
-          onCallEnded={handleCallEnded}
-          audioOnly={isAudioCall}
+          onCallEnded={() => {
+            setShowCallScreen(false);
+            setActiveCallSession(null);
+          }}
+          audioOnly={activeCallType === CometChat.CALL_TYPE.AUDIO}
         />
       )}
     </View>

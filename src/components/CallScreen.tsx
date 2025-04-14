@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react"
 import { View, StyleSheet, Modal, Text, ActivityIndicator, TouchableOpacity, Image } from "react-native"
 import { CometChatCalls } from "@cometchat/calls-sdk-react-native"
 import { CometChat } from "@cometchat/chat-sdk-react-native"
+import { rejectCall, cancelCall } from '../services/callService'
 
 interface CallScreenProps {
   sessionId?: string
@@ -74,12 +75,12 @@ const CallScreen: React.FC<CallScreenProps> = ({
   }, [sessionId])
 
   // Reject incoming call
-  const rejectCall = useCallback(async () => {
+  const handleRejectCall = useCallback(async () => {
     if (!sessionId) return
     
     try {
       console.log("Rejecting call with sessionID:", sessionId)
-      await CometChat.rejectCall(sessionId, CometChat.CALL_STATUS.REJECTED)
+      await rejectCall(sessionId, CometChat.CALL_STATUS.REJECTED)
       onCallEnded()
     } catch (err: any) {
       console.error("Error rejecting call:", err)
@@ -88,12 +89,12 @@ const CallScreen: React.FC<CallScreenProps> = ({
   }, [sessionId, onCallEnded])
 
   // Cancel outgoing call
-  const cancelCall = useCallback(async () => {
+  const handleCancelCall = useCallback(async () => {
     if (!sessionId) return
     
     try {
       console.log("Cancelling outgoing call with sessionID:", sessionId)
-      await CometChat.rejectCall(sessionId, CometChat.CALL_STATUS.CANCELLED)
+      await rejectCall(sessionId, CometChat.CALL_STATUS.CANCELLED)
       onCallEnded()
     } catch (err: any) {
       console.error("Error cancelling call:", err)
@@ -344,7 +345,7 @@ const CallScreen: React.FC<CallScreenProps> = ({
               <TouchableOpacity style={styles.acceptButton} onPress={acceptCall}>
                 <Text style={styles.buttonText}>Accept</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.rejectButton} onPress={rejectCall}>
+              <TouchableOpacity style={styles.rejectButton} onPress={handleRejectCall}>
                 <Text style={styles.buttonText}>Reject</Text>
               </TouchableOpacity>
             </View>
@@ -358,7 +359,7 @@ const CallScreen: React.FC<CallScreenProps> = ({
             <Text style={styles.callerName}>{callerInfo?.getName() || "Unknown Recipient"}</Text>
             <Text style={styles.callStatus}>Calling...</Text>
             
-            <TouchableOpacity style={styles.endCallButton} onPress={cancelCall}>
+            <TouchableOpacity style={styles.endCallButton} onPress={handleCancelCall}>
               <Text style={styles.buttonText}>Cancel</Text>
             </TouchableOpacity>
           </View>

@@ -32,9 +32,12 @@ export const loadMessages = async (
           console.log("Message is null or not an object");
           continue;
         }
-        
-        if ((msg as any).getCategory?.() === "action") {
-          console.log("Skipping action message");
+        if (msg.getCategory?.() === "action" && msg.getType?.() === "call") {
+          console.log("Skipping call-ended action message");
+          continue;
+        }
+        if ((msg as any).getCategory?.() === "action" ) {
+          console.log("Skipping action/call message");
           continue;
         }
         

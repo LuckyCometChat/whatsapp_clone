@@ -292,11 +292,26 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
           })
         );
         
+        // Filter out messages containing "Audio" or "Video" in their text content
+        const messagesWithoutAudioVideo = messagesWithThreadCounts.filter(msg => {
+          // Skip messages that contain "Audio" or "Video" in their text content
+          if (msg.text && (
+              msg.text.toLowerCase().includes('audio') || 
+              msg.text.toLowerCase().includes('video')
+            )) {
+            console.log(`Filtering out message with text: ${msg.text}`);
+            return false;
+          }
+          return true;
+        });
+        
+        console.log(`After filtering Audio/Video messages: ${messagesWithoutAudioVideo.length} messages`);
+        
         // Update state with formatted messages
-        setMessages(messagesWithThreadCounts);
+        setMessages(messagesWithoutAudioVideo);
         
         // Scroll to the bottom
-        if (flatListRef.current && messagesWithThreadCounts.length > 0) {
+        if (flatListRef.current && messagesWithoutAudioVideo.length > 0) {
           setTimeout(() => {
             flatListRef.current?.scrollToEnd({ animated: false });
           }, 200);
@@ -657,6 +672,15 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
               reactions: reactions
             };
             
+            // Filter out messages containing "Audio" or "Video" in their text content
+            if (convertedMessage.text && (
+                convertedMessage.text.toLowerCase().includes('audio') || 
+                convertedMessage.text.toLowerCase().includes('video')
+              )) {
+              console.log(`Filtering out real-time message with text: ${convertedMessage.text}`);
+              return;
+            }
+            
             setMessages(prevMessages => [...prevMessages, convertedMessage]);
             
             // Scroll to the bottom
@@ -787,6 +811,15 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
                       : (attachment.getName() || 'media')
               } : undefined
             };
+            
+            // Filter out messages containing "Audio" or "Video" in their text content
+            if (convertedMessage.text && (
+                convertedMessage.text.toLowerCase().includes('audio') || 
+                convertedMessage.text.toLowerCase().includes('video')
+              )) {
+              console.log(`Filtering out real-time media message with text: ${convertedMessage.text}`);
+              return;
+            }
             
             setMessages(prevMessages => [...prevMessages, convertedMessage]);
             
