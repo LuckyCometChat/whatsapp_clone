@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   StatusBar
 } from 'react-native';
 import { loginCometChat } from '../services/cometChat';
+import { setupTokenRefreshListener } from '../services/pushNotifications';
 import { User } from '../types';
 
 
@@ -20,6 +21,17 @@ interface LoginProps {
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [uid, setUid] = useState('');
 
+  // Setup token refresh listener when component mounts
+  useEffect(() => {
+    const unsubscribe = setupTokenRefreshListener();
+    
+    // Cleanup listener when component unmounts
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []);
  
   const handleLogin = async () => {
     if (!uid.trim()) {
@@ -29,11 +41,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       const cometChatUser = await loginCometChat(uid);
+      
       const user: User = {
         uid: cometChatUser.getUid(),
         name: cometChatUser.getName(),
-        avatar: cometChatUser.getAvatar(),
-        getStatus: () => 'online'
+        avatar: cometChatUser.getAvatar()
       };
       onLogin(user, 'online');
     } catch (error) {

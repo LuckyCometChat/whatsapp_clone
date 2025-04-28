@@ -2,9 +2,9 @@ import { CometChat } from '@cometchat/chat-sdk-react-native';
 import { User, ChatMessage } from '../types';
 
 
-const APP_ID = "272268d25643b5db";
-const REGION = "IN";
-const AUTH_KEY = "3a1b1fef651a2279ff270d847dd67991ded9808b";
+export const APP_ID = "272268d25643b5db";
+export const REGION = "IN";
+ export const AUTH_KEY = "3a1b1fef651a2279ff270d847dd67991ded9808b";
 
 export const initCometChat = async () => {
   try {

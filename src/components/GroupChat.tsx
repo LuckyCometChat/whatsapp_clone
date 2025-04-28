@@ -16,7 +16,8 @@ import {
   ScrollView,
   ActivityIndicator,
   ActionSheetIOS,
-  PermissionsAndroid
+  PermissionsAndroid,
+  AppState
 } from 'react-native';
 import {
   fetchGroupMessages,
@@ -55,6 +56,7 @@ import Video from 'react-native-video';
 import ThreadedChat from './ThreadedChat';
 import Icon from 'react-native-vector-icons/Ionicons';
 import CallButtons from './CallButtons';
+import { displayNotification } from '../services/pushNotifications';
 
 interface GroupChatProps {
   currentUser: User;
@@ -95,6 +97,7 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
   const [showThreadedChat, setShowThreadedChat] = useState(false);
   const [selectedThreadMessage, setSelectedThreadMessage] = useState<ChatMessage | null>(null);
   const [threadParticipants, setThreadParticipants] = useState<User[]>([]);
+  const [appState, setAppState] = useState(AppState.currentState);
   
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -130,6 +133,16 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
         updateMessage: !!cometChatService.updateMessage
       });
     });
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      setAppState(nextAppState);
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   const loadMessages = async () => {
@@ -580,6 +593,19 @@ const GroupChat: React.FC<GroupChatProps> = ({ currentUser, selectedGroup, onBac
             if ((textMessage as any).getCategory && (textMessage as any).getCategory() === 'action') {
               console.log("Skipping action message:", textMessage);
               return;
+            }
+            
+            // Check if app is in background or not focused
+            const isAppBackground = appState !== 'active';
+            const senderId = textMessage.getSender().getUid();
+            const senderName = textMessage.getSender().getName();
+            
+            // Show notification when message is from another user (not current user) and app is in background
+            if (senderId !== currentUser.uid && isAppBackground) {
+              displayNotification(
+                `${senderName} in ${selectedGroup.name}`,
+                textMessage.getText()
+              );
             }
             
             // Skip thread messages - these should only appear in their respective thread

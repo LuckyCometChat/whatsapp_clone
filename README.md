@@ -12,6 +12,7 @@ A React Native mobile application that replicates the core features of WhatsApp 
 - Message editing and deletion
 - Typing indicators
 - Audio and video calling
+- Push notifications
 
 ## Setup
 
@@ -117,6 +118,59 @@ To send media:
 2. Select the media type
 3. Choose the file to send
 4. The media will be uploaded and sent automatically
+
+## Push Notifications Setup
+
+The app includes push notification support using Firebase Cloud Messaging (FCM) and Notifee for display.
+
+### Firebase Setup
+
+1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
+2. Add Android and iOS apps to your Firebase project
+3. Download the configuration files:
+   - For Android: `google-services.json` and place it in `android/app/`
+   - For iOS: `GoogleService-Info.plist` and place it in your Xcode project
+
+### Android Notification Setup
+
+1. Create a notification icon named `ic_notification.png` in different resolutions:
+   - Place in `android/app/src/main/res/mipmap-mdpi/`
+   - Place in `android/app/src/main/res/mipmap-hdpi/`
+   - Place in `android/app/src/main/res/mipmap-xhdpi/`
+   - Place in `android/app/src/main/res/mipmap-xxhdpi/`
+
+2. Add required permissions in `android/app/src/main/AndroidManifest.xml`:
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.VIBRATE" />
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+```
+
+### iOS Notification Setup
+
+1. Enable Push Notifications and Background Modes in Xcode:
+   - Open Xcode project
+   - Go to Signing & Capabilities
+   - Add Push Notifications capability
+   - Add Background Modes capability and check "Remote notifications"
+
+2. Upload APNs key to Firebase:
+   - Generate APNs key in Apple Developer portal
+   - Upload the key to Firebase console in your project settings
+
+### CometChat Setup
+
+1. Go to CometChat Dashboard > Extensions
+2. Enable "Push Notifications" extension
+3. Configure both FCM and APNs settings
+
+### Testing Push Notifications
+
+To test that notifications are working:
+1. Run the app on a real device (not simulator)
+2. Login with a user account
+3. Send a message from another user or device
+4. Put the app in background and verify the notification appears
 
 ## Troubleshooting
 

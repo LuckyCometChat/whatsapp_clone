@@ -15,7 +15,8 @@ import {
   Modal,
   ActionSheetIOS,
   PermissionsAndroid,
-  Linking
+  Linking,
+  AppState
 } from 'react-native';
 import { fetchMessages, sendMessage, subscribeToUserStatus, EditMessage, deleteMessage, subscribeToMessageDeletion, subscribeToMessageEdit, typeMessageStarted, typeMessageEnded, sendMediaMessage, getThreadMessageCount } from '../services/cometChat';
 import { User, ChatMessage, CometChatMessage, Reaction } from '../types/index';
@@ -24,6 +25,7 @@ import * as ImagePicker from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Video from 'react-native-video';
+import { displayNotification } from '../services/pushNotifications';
 import { 
   updateReactions,
   loadMessages,
@@ -72,6 +74,7 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [showThread, setShowThread] = useState(false);
   const [threadParentMessage, setThreadParentMessage] = useState<ChatMessage | null>(null);
+  const [appState, setAppState] = useState(AppState.currentState);
 
   const userStatus = userStatuses[selectedUser.uid] || 'offline';
 
@@ -249,9 +252,21 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       new CometChat.MessageListener({
         onTextMessageReceived: (textMessage: CometChat.TextMessage) => {
           const senderId = textMessage.getSender().getUid();
+          const senderName = textMessage.getSender().getName();
           const receiver = textMessage.getReceiver() as CometChat.User;
           const receiverId = receiver.getUid();
           const parentMessageId = textMessage.getParentMessageId();
+
+          // Check if app is in background or not focused
+          const isAppBackground = appState !== 'active';
+
+          // Show notification when message is from selected user but app is in background
+          if (senderId === selectedUser.uid && receiverId === currentUser.uid && isAppBackground) {
+            displayNotification(
+              senderName,
+              textMessage.getText()
+            );
+          }
 
           if (
             (senderId === selectedUser.uid && receiverId === currentUser.uid) ||
@@ -409,6 +424,11 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
       })
     );
 
+    // Add AppState listener
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      setAppState(nextAppState);
+    });
+
     return () => {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
@@ -441,8 +461,10 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
           console.error("Error ending typing on unmount:", error);
         });
       }
+
+      subscription.remove();
     };
-  }, [selectedUser, currentUser.uid, onUserStatusChange]);
+  }, [selectedUser, currentUser.uid, onUserStatusChange, appState]);
 
   const handleLongPress = (message: ChatMessage, event: any) => {
     const { pageX, pageY } = event.nativeEvent;
@@ -967,7 +989,10 @@ const Chat: React.FC<ChatProps> = ({ currentUser, selectedUser, onBack, userStat
             </Text>
           </View>
           <View style={styles.headerActions}>
-            <CallButtons receiverId={selectedUser.uid} />
+            <CallButtons 
+              receiverId={selectedUser.uid} 
+              receiverType={CometChat.RECEIVER_TYPE.USER} 
+            />
           </View>
         </View>
       </View>

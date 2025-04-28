@@ -1,3 +1,67 @@
+import { CometChat } from "@cometchat/chat-sdk-react-native";
+import { registerPushNotificationToken, unregisterPushNotificationToken } from "./pushNotifications";
+
+const APP_ID = "272268d25643b5db";
+const REGION = "IN";
+const AUTH_KEY = "3a1b1fef651a2279ff270d847dd67991ded9808b";
+
+// Initialize CometChat
+export const initCometChat = async () => {
+  try {
+    const appSettings = new CometChat.AppSettingsBuilder()
+      .subscribePresenceForAllUsers()
+      .setRegion(REGION)
+      .build();
+    
+    return await CometChat.init(APP_ID, appSettings);
+  } catch (error) {
+    console.error("CometChat initialization failed:", error);
+    throw error;
+  }
+};
+
+// Login to CometChat
+export const loginCometChat = async (uid: string) => {
+  try {
+    const user = await CometChat.login(uid, AUTH_KEY);
+    console.log("CometChat login successful:", user);
+    
+    // Register FCM token for push notifications
+    try {
+      await registerPushNotificationToken();
+    } catch (tokenError) {
+      console.error("Failed to register push notification token:", tokenError);
+      // Continue with login even if token registration fails
+    }
+    
+    return user;
+  } catch (error) {
+    console.error("CometChat login failed:", error);
+    throw error;
+  }
+};
+
+// Logout from CometChat
+export const logoutCometChat = async () => {
+  try {
+    // Unregister push notification token before logout
+    try {
+      await unregisterPushNotificationToken();
+    } catch (tokenError) {
+      console.error("Failed to unregister push notification token:", tokenError);
+      // Continue with logout even if token unregistration fails
+    }
+    
+    // Perform CometChat logout
+    const response = await CometChat.logout();
+    console.log("CometChat logout successful");
+    return response;
+  } catch (error) {
+    console.error("CometChat logout failed:", error);
+    throw error;
+  }
+};
+
 // Improve the getMessageById function to properly handle message metadata
 export const getMessageById = async (messageId: string) => {
   try {
