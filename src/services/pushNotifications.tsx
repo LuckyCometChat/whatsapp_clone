@@ -2,15 +2,98 @@ import { CometChat } from "@cometchat/chat-sdk-react-native";
 import messaging from "@react-native-firebase/messaging";
 import { Platform, PermissionsAndroid, AppState } from "react-native";
 import notifee, { AndroidImportance, EventType, Event, AndroidVisibility } from "@notifee/react-native";
+import RNCallKeep from 'react-native-callkeep';
+import CallKeepHelper from './CallKeepHelper';
 
-const APP_ID = "272268d25643b5db";
+const APP_ID = "272268d5643b5db";
 const REGION = "IN";
 const AUTH_KEY = "3a1b1fef651a2279ff270d847dd67991ded9808b";
+
+// Define message type for CallKeep
+interface CallMessage {
+    conversationId: string;
+    sessionId: string;
+    category: string;
+    action: string;
+    sender: {
+        name: string;
+        uid: string;
+        avatar?: string;
+    };
+    call?: {
+        category: string;
+    };
+}
 
 const APP_SETTINGS = new CometChat.AppSettingsBuilder()
     .subscribePresenceForAllUsers()
     .setRegion(REGION)
     .build();
+
+// CallKeep options
+const callKeepOptions = {
+    ios: {
+        appName: 'WhatsApp Clone',
+        supportsVideo: true,
+        imageName: 'phone_icon'
+    },
+    android: {
+        alertTitle: 'Permissions required',
+        alertDescription: 'This app needs to access your phone accounts',
+        cancelButton: 'Cancel',
+        okButton: 'ok',
+        imageName: 'phone_account_icon',
+        additionalPermissions: [] as string[],
+        // This must be false for most apps - true is only for special dialer/phone apps
+        selfManaged: false,
+        // These will be replaced by the string resources
+        foregroundService: {
+            channelId: 'com.whatsapp.clone',
+            channelName: 'Foreground service for call',
+            notificationTitle: 'Call in progress',
+            notificationIcon: 'ic_notification',
+        },
+    },
+};
+
+// Initialize CallKeep
+export const initCallKeep = () => {
+    try {
+        // First setup CallKeep with options
+        RNCallKeep.setup(callKeepOptions)
+            .then(() => {
+                console.log('CallKeep setup successful');
+                // Check and ensure that the phone account is available after setup
+                RNCallKeep.setAvailable(true);
+                
+                // Check for Android specific permissions
+                if (Platform.OS === 'android') {
+                    // On Android 11+, we need to ensure permissions are granted
+                    RNCallKeep.hasPhoneAccount()
+                        .then((hasPhoneAccount) => {
+                            console.log('Phone account exists:', hasPhoneAccount);
+                            if (!hasPhoneAccount) {
+                                // Register the phone account to get proper permissions
+                                // Pass the same options used for setup
+                                RNCallKeep.registerPhoneAccount(callKeepOptions);
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error checking for phone account:', error);
+                            // Try registering phone account anyway
+                            RNCallKeep.registerPhoneAccount(callKeepOptions);
+                        });
+                }
+            })
+            .catch(error => {
+                console.error('CallKeep setup error:', error);
+            });
+        
+        return new CallKeepHelper();
+    } catch (error) {
+        console.error('Error initializing CallKeep:', error);
+    }
+};
 
 /**
  * Initialize CometChat
@@ -182,18 +265,6 @@ export const createNotificationChannel = async () => {
             visibility: AndroidVisibility.PUBLIC,
             badge: true,
         });
-        
-        // Create a separate channel for calls
-        await notifee.createChannel({
-            id: 'calls',
-            name: 'Calls',
-            lights: true,
-            vibration: true,
-            sound: 'ringtone',
-            importance: AndroidImportance.HIGH,
-            visibility: AndroidVisibility.PUBLIC,
-            badge: true,
-        });
     }
 };
 
@@ -205,38 +276,18 @@ export const displayNotification = async (title: string, body: string, data?: an
         // Create channel if on Android
         await createNotificationChannel();
         
-        // Determine if it's a call notification based on data
-        const isCallNotification = data?.type === 'call';
-        const channelId = isCallNotification ? 'calls' : 'chat-messages';
-        
         // Create notification icon options
         const androidOptions = {
-            channelId,
+            channelId: 'chat-messages',
             pressAction: {
                 id: 'default',
             },
-            smallIcon: 'ic_notification', // Try using a dedicated notification icon
+            smallIcon: 'ic_notification',
             largeIcon: data?.sender?.avatar || undefined,
             importance: AndroidImportance.HIGH,
-            sound: isCallNotification ? 'ringtone' : 'default',
             visibility: AndroidVisibility.PUBLIC,
-            ongoing: isCallNotification, // Make call notifications persistent
             color: '#25D366', // WhatsApp green color for the notification
             showTimestamp: true,
-            actions: isCallNotification ? [
-                {
-                    title: 'Answer',
-                    pressAction: {
-                        id: 'answer',
-                    },
-                },
-                {
-                    title: 'Decline',
-                    pressAction: {
-                        id: 'decline',
-                    },
-                },
-            ] : undefined,
         };
         
         // Display notification
@@ -252,9 +303,7 @@ export const displayNotification = async (title: string, body: string, data?: an
                     banner: true,
                     list: true,
                 },
-                sound: isCallNotification ? 'ringtone.caf' : 'default',
-                critical: isCallNotification,
-                interruptionLevel: isCallNotification ? 'critical' : 'active',
+                sound: 'default',
             },
         });
     } catch (error) {
@@ -272,7 +321,37 @@ export const setupMessagingListeners = () => {
         
         const { notification, data } = remoteMessage;
         
-        // Force display notification even in foreground
+        // Handle call notifications in foreground
+        if (data?.message) {
+            try {
+                // Process the message
+                const msg = CometChat.CometChatHelper.processMessage(
+                    JSON.parse(data.message as string)
+                ) as unknown as CallMessage;
+                
+                // Check if it's a call notification
+                if (msg.category === 'call' && Platform.OS === 'android') {
+                    // Check if call is initiated or ended
+                    if (msg.action === 'initiated') {
+                        // Set message in CallKeepHelper
+                        CallKeepHelper.msg = msg;
+                        // Display call notification
+                        CallKeepHelper.displayCallAndroid();
+                        return; // Don't show regular notification for calls
+                    } else if (msg.action === 'cancelled' || msg.action === 'rejected' || msg.action === 'ended') {
+                        // If call ended, end the CallKeep call
+                        if (msg.conversationId) {
+                            RNCallKeep.endCall(msg.conversationId);
+                        }
+                        return; // Don't show regular notification for ended calls
+                    }
+                }
+            } catch (error) {
+                console.error('Error processing call notification:', error);
+            }
+        }
+        
+        // Force display notification even in foreground for regular messages
         if (notification) {
             await displayNotification(
                 notification.title || 'New Message',
@@ -317,6 +396,62 @@ export const setupMessagingListeners = () => {
 };
 
 /**
+ * Register background handler for handling incoming calls when the app is in background
+ */
+export const setupBackgroundMessageHandler = () => {
+    messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+        console.log('Background message received:', remoteMessage);
+        const { notification, data } = remoteMessage;
+        
+        // Handle call notifications with CallKeep
+        if (Platform.OS === 'android' && data?.message) {
+            try {
+                // Setup CallKeep for call notifications
+                RNCallKeep.setup(callKeepOptions);
+                RNCallKeep.setAvailable(true);
+                
+                // Process the message
+                const msg = CometChat.CometChatHelper.processMessage(
+                    JSON.parse(data.message as string)
+                ) as unknown as CallMessage;
+                
+                // Check if it's a call notification
+                if (msg.category === 'call') {
+                    // Check if call is initiated or ended
+                    if (msg.action === 'initiated') {
+                        // Set message in CallKeepHelper
+                        CallKeepHelper.msg = msg;
+                        // Display call notification
+                        CallKeepHelper.displayCallAndroid();
+                    } else {
+                        // If call ended, end the CallKeep call
+                        RNCallKeep.endCall(msg.conversationId);
+                    }
+                    return; // Don't show regular notification for calls
+                }
+            } catch (error) {
+                console.error('Error processing call notification:', error);
+            }
+        }
+        
+        // Process regular notifications
+        if (notification) {
+            await displayNotification(
+                notification.title || 'New Message',
+                notification.body || 'You have a new message',
+                data
+            );
+        } else if (data) {
+            await displayNotification(
+                (data.title as string) || 'New Message',
+                (data.body as string) || 'You have a new message',
+                data
+            );
+        }
+    });
+};
+
+/**
  * Initialize push notifications (combine all initialization steps)
  */
 export const initPushNotifications = async () => {
@@ -324,27 +459,15 @@ export const initPushNotifications = async () => {
         // Create notification channel for Android
         await createNotificationChannel();
         
-        // Register background handler first (Firebase requirement)
-        messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-            console.log('Background message received:', remoteMessage);
-            const { notification, data } = remoteMessage;
-            
-            if (notification) {
-                await displayNotification(
-                    notification.title || 'New Message',
-                    notification.body || 'You have a new message',
-                    data
-                );
-            } else if (data) {
-                await displayNotification(
-                    (data.title as string) || 'New Message',
-                    (data.body as string) || 'You have a new message',
-                    data
-                );
-            }
-        });
+        // Initialize CallKeep
+        if (Platform.OS === 'android') {
+            initCallKeep();
+        }
         
-        // Setup message listeners
+        // Set up background message handler
+        setupBackgroundMessageHandler();
+        
+        // Setup message listeners for foreground messages
         const unsubscribe = setupMessagingListeners();
         
         // Request permissions explicitly

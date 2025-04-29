@@ -9,6 +9,8 @@ import Chat from './src/components/Chat';
 import GroupList from './src/components/GroupList';
 import GroupChat from './src/components/GroupChat';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
+import RNCallKeep from 'react-native-callkeep';
+// import CallKeepHelper from './path-to/CallKeepHelper';
 
 const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -97,6 +99,7 @@ const App = () => {
     }));
     setIsLoggedIn(true);
   };
+  
 
   const handleLogout = () => {
     setIsLoggedIn(false);
