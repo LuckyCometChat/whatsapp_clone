@@ -65,14 +65,80 @@ const CallScreen: React.FC<CallScreenProps> = ({
     try {
       setLoading(true)
       console.log("Accepting call with sessionID:", sessionId)
-      await CometChat.acceptCall(sessionId)
+      
+      try {
+        await CometChat.acceptCall(sessionId)
+      } catch (err: any) {
+        // If the error is that we're already joined, we can continue
+        if (err && err.code === 'ERR_CALL_USER_ALREADY_JOINED') {
+          console.log('User already joined call - continuing with call UI')
+        } else {
+          // For other errors, rethrow
+          throw err
+        }
+      }
+      
+      // Get logged in user for auth token
+      const loggedInUser = await CometChat.getLoggedinUser()
+      if (!loggedInUser) {
+        throw new Error("No logged in user found")
+      }
+
+      const authToken = loggedInUser.getAuthToken()
+
+      // Generate call token using the official method
+      const tokenResponse = await CometChatCalls.generateToken(sessionId, authToken)
+      const token = tokenResponse.token
+
+      console.log("Call token generated:", token)
+
+      // Create call settings
+      const callListener = {
+        onUserJoined: (user: any) => {
+          console.log("User joined:", user)
+        },
+        onUserLeft: (user: any) => {
+          console.log("User left:", user)
+        },
+        onCallEnded: () => {
+          console.log("Call ended from listener")
+          handleCallEnd()
+        },
+        onCallEndButtonPressed: () => {
+          console.log("End call button pressed")
+          handleCallEnd()
+        },
+        onError: (error: any) => {
+          console.error("Call error:", error)
+          setError(`Call error: ${error.message || "Unknown error"}`)
+          handleCallEnd()
+        }
+      }
+
+      // Create call settings using the builder pattern
+      const settings = new CometChatCalls.CallSettingsBuilder()
+        .enableDefaultLayout(true)
+        .setIsAudioOnlyCall(audioOnly)
+        .showEndCallButton(true)
+        .showPauseVideoButton(!audioOnly)
+        .showMuteAudioButton(true)
+        .showSwitchCameraButton(!audioOnly)
+        .showAudioModeButton(true)
+        .startWithAudioMuted(false)
+        .startWithVideoMuted(false)
+        .setCallEventListener(callListener)
+        .build()
+
+      setCallToken(token)
+      setCallSettings(settings)
+      setLoading(false)
       
     } catch (err: any) {
       console.error("Error accepting call:", err)
       setError(`Failed to accept call: ${err.message || "Unknown error"}`)
       setLoading(false)
     }
-  }, [sessionId])
+  }, [sessionId, audioOnly, handleCallEnd])
 
   // Reject incoming call
   const handleRejectCall = useCallback(async () => {
@@ -296,7 +362,7 @@ const CallScreen: React.FC<CallScreenProps> = ({
   }
 
   // If there's an active call session ready, show the CometChat call UI
-  if (callToken && callSettings && !isIncoming) {
+  if (callToken && callSettings) {
     return (
       <Modal
         visible={isVisible}

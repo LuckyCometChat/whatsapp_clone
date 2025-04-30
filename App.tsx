@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { View, StyleSheet, Alert, NativeEventEmitter } from 'react-native';
 import { initCometChat as initCometChatCalls } from './src/services/cometCall';
 import { AppInitializer } from './src/services';
 import { User, Group } from './src/types';
@@ -9,8 +9,40 @@ import Chat from './src/components/Chat';
 import GroupList from './src/components/GroupList';
 import GroupChat from './src/components/GroupChat';
 import { CometChat } from '@cometchat/chat-sdk-react-native';
+import { CometChatCalls } from '@cometchat/calls-sdk-react-native';
 import RNCallKeep from 'react-native-callkeep';
-// import CallKeepHelper from './path-to/CallKeepHelper';
+import CallKeepHelper from './src/services/CallKeepHelper';
+import CallScreen from './src/components/CallScreen';
+import { initCallKeep, initPushNotifications } from './src/services/pushNotifications';
+
+// Utility function to clean up any active calls
+const cleanupActiveCalls = async () => {
+  try {
+    // Try to end any active call sessions first
+    if (CometChatCalls && CometChatCalls.endSession) {
+      await CometChatCalls.endSession();
+    }
+    
+    // Check if there's an active call in CometChat and clear it
+    const activeCall = await CometChat.getActiveCall();
+    if (activeCall) {
+      await CometChat.clearActiveCall();
+      console.log('Cleaned up active call during app initialization');
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error cleaning up active calls:', error);
+    // Try the direct clearActiveCall as a fallback
+    try {
+      await CometChat.clearActiveCall();
+      return true;
+    } catch (innerError) {
+      console.error('Failed to clear active call even with fallback:', innerError);
+      return false;
+    }
+  }
+};
 
 const App = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -20,20 +52,158 @@ const App = () => {
   const userStatusListenerRef = useRef<string | null>(null);
   const [showGroups, setShowGroups] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const callKeepHelperRef = useRef<CallKeepHelper | null>(null);
+  const eventEmitter = useRef<NativeEventEmitter | null>(null);
+  const [activeCall, setActiveCall] = useState<{
+    sessionId: string;
+    isVisible: boolean;
+    isIncoming: boolean;
+    audioOnly: boolean;
+  } | null>(null);
+  const callRecoveryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Navigation function that can be passed to CallKeepHelper
+  const navigate = useCallback((params: { 
+    index: number; 
+    routes: Array<{ name: string; params: any }> 
+  }) => {
+    const route = params.routes[0];
+    if (route.name === 'CallScreen' && route.params) {
+      setActiveCall({
+        sessionId: route.params.sessionId,
+        isVisible: route.params.isVisible,
+        isIncoming: route.params.isIncoming,
+        audioOnly: route.params.audioOnly,
+      });
+    }
+  }, []);
+
+  // Function to handle call session recovery
+  const recoverCallSession = useCallback(async (sessionId: string, isAudioOnly: boolean = false) => {
+    try {
+      // Clear any existing timeout
+      if (callRecoveryTimeoutRef.current) {
+        clearTimeout(callRecoveryTimeoutRef.current);
+        callRecoveryTimeoutRef.current = null;
+      }
+      
+      // Clean up any active calls first
+      await cleanupActiveCalls();
+      
+      try {
+        // Try to accept the call with CometChat
+        await CometChat.acceptCall(sessionId);
+        console.log('Call recovered and accepted successfully');
+      } catch (error: any) {
+        // If error is "user already joined", we can continue - the call is already accepted
+        if (error && error.code === 'ERR_CALL_USER_ALREADY_JOINED') {
+          console.log('User already joined call - continuing with call handling');
+        } else {
+          // Rethrow other errors
+          throw error;
+        }
+      }
+      
+      // Update the UI - do this regardless of whether we succeeded in acceptCall
+      // since the error might just be that we're already in the call
+      setActiveCall({
+        sessionId,
+        isVisible: true,
+        isIncoming: true,
+        audioOnly: isAudioOnly,
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Error recovering call session:', error);
+      
+      // If we still have "call already in progress" error, schedule another retry
+      if (error && (error as any).message && (error as any).message.includes('already in progress')) {
+        console.log('Still detecting call in progress error, scheduling another retry...');
+        callRecoveryTimeoutRef.current = setTimeout(() => {
+          recoverCallSession(sessionId, isAudioOnly);
+        }, 2000);
+      }
+      
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        // Clean up any active calls first to start with a clean state
+        await cleanupActiveCalls();
+        
         // Initialize CometChat Calls
         await initCometChatCalls();
         console.log("CometChat Calls initialization successful");
+
+        // Initialize push notifications
+        await initPushNotifications();
+
+        // Initialize CallKeep and pass the navigation function
+        const helper = await initCallKeep();
+        if (helper) {
+          callKeepHelperRef.current = helper;
+          // Set the navigation function
+          if (callKeepHelperRef.current) {
+            callKeepHelperRef.current.navigate = navigate;
+            CallKeepHelper.navigateFunction = navigate;
+          }
+        }
+        
+        // Always ensure the navigation function is available statically
+        // This prevents "navigation function not available" errors
+        CallKeepHelper.navigateFunction = navigate;
+
+        // Set up event listeners for call events
+        eventEmitter.current = new NativeEventEmitter();
+        eventEmitter.current.addListener('CallAccepted', (event) => {
+          console.log('Call accepted event received:', event);
+          setActiveCall({
+            sessionId: event.sessionId,
+            isVisible: true,
+            isIncoming: true,
+            audioOnly: event.callType === 'audio',
+          });
+        });
+
+        eventEmitter.current.addListener('CallAcceptedRequiresNavigation', (event) => {
+          console.log('Call navigation required event received:', event);
+          
+          // Try to recover the call session
+          recoverCallSession(event.sessionId, event.audioOnly);
+        });
       } catch (error) {
-        console.error("CometChat Calls initialization error:", error);
+        console.error("App initialization error:", error);
         Alert.alert("Initialization Error", JSON.stringify(error));
       }
     };
+    
     initializeApp();
-  }, []);
+
+    // Clean up when component unmounts
+    return () => {
+      // Clean up any listeners
+      if (callKeepHelperRef.current) {
+        callKeepHelperRef.current.removeEventListeners();
+      }
+      
+      if (eventEmitter.current) {
+        eventEmitter.current.removeAllListeners('CallAccepted');
+        eventEmitter.current.removeAllListeners('CallAcceptedRequiresNavigation');
+      }
+      
+      // Clear any recovery timeout
+      if (callRecoveryTimeoutRef.current) {
+        clearTimeout(callRecoveryTimeoutRef.current);
+      }
+      
+      // Try to clean up any active calls
+      cleanupActiveCalls().catch(console.error);
+    };
+  }, [navigate, recoverCallSession]);
 
   useEffect(() => {
     if (isLoggedIn && currentUser) {
@@ -100,7 +270,6 @@ const App = () => {
     setIsLoggedIn(true);
   };
   
-
   const handleLogout = () => {
     setIsLoggedIn(false);
     setCurrentUser(null);
@@ -108,6 +277,9 @@ const App = () => {
     setSelectedGroup(null);
     setShowGroups(false);
     setUserStatuses({});
+    
+    // Clean up any active calls on logout
+    cleanupActiveCalls().catch(console.error);
   };
 
   const handleUserSelect = (user: User) => {
@@ -134,6 +306,13 @@ const App = () => {
     setShowGroups(!showGroups);
     setSelectedUser(null);
     setSelectedGroup(null);
+  };
+
+  const handleCallEnded = () => {
+    setActiveCall(null);
+    
+    // Clean up any active calls when a call ends
+    cleanupActiveCalls().catch(console.error);
   };
 
   const renderContent = () => {
@@ -192,6 +371,17 @@ const App = () => {
     <AppInitializer>
       <View style={styles.container}>
         {renderContent()}
+        
+        {/* Render call screen when there's an active call */}
+        {activeCall && (
+          <CallScreen
+            sessionId={activeCall.sessionId}
+            isVisible={activeCall.isVisible}
+            onCallEnded={handleCallEnded}
+            audioOnly={activeCall.audioOnly}
+            isIncoming={activeCall.isIncoming}
+          />
+        )}
       </View>
     </AppInitializer>
   );
