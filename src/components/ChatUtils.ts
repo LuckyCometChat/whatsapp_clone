@@ -112,7 +112,7 @@ export const updateReactions = async (
 
 export const convertCometChatMessageToChat = (msg: CometChat.BaseMessage): ChatMessage | null => {
   try {
-    console.log("Converting message:", msg?.getId?.());
+    // console.log("Converting message:", msg?.getId?.());
     
     if (!msg || typeof msg !== 'object') {
       console.log("Message is null or not an object");
@@ -193,7 +193,7 @@ export const convertCometChatMessageToChat = (msg: CometChat.BaseMessage): ChatM
     try {
       if ((msg as any).getReactions && typeof (msg as any).getReactions === 'function') {
         const rawReactions = (msg as any).getReactions() || [];
-        console.log("Raw reactions:", rawReactions);
+        // console.log("Raw reactions:", rawReactions);
         if (Array.isArray(rawReactions)) {
           reactions = rawReactions.map(reaction => {
             if (!reaction) return null;

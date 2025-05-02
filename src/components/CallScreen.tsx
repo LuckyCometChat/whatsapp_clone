@@ -1,5 +1,3 @@
-"use client"
-
 import React, { useState, useEffect, useCallback } from "react"
 import { View, StyleSheet, Modal, Text, ActivityIndicator, TouchableOpacity, Image } from "react-native"
 import { CometChatCalls } from "@cometchat/calls-sdk-react-native"
@@ -14,6 +12,7 @@ interface CallScreenProps {
   receiverId?: string
   callType?: string
   isIncoming?: boolean
+  videoOnly?: boolean
 }
 
 const CallScreen: React.FC<CallScreenProps> = ({ 
@@ -23,7 +22,8 @@ const CallScreen: React.FC<CallScreenProps> = ({
   audioOnly = false,
   receiverId,
   callType,
-  isIncoming = false
+  isIncoming = false,
+  videoOnly = false
 }) => {
   const [callToken, setCallToken] = useState<string | null>(null)
   const [callSettings, setCallSettings] = useState<any>(null)
@@ -36,10 +36,8 @@ const CallScreen: React.FC<CallScreenProps> = ({
   const handleCallEnd = useCallback(() => {
     console.log("Ending call and cleaning up")
     try {
-    
+   
       CometChatCalls.endSession()
-      
-  
       if (sessionId) {
         CometChat.endCall(sessionId).catch(err => 
           console.log("Error ending call in CometChat:", err)

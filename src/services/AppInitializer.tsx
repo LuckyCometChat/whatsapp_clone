@@ -18,15 +18,9 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
   useEffect(() => {
     const initialize = async () => {
       try {
-        // Initialize CometChat
         await initCometChat();
-        
-        // Request notification permissions
         await requestNotificationPermissions();
-        
-        // Initialize push notifications
         await initPushNotifications();
-        
         setIsInitializing(false);
       } catch (err) {
         console.error('Initialization error:', err);
@@ -36,10 +30,6 @@ const AppInitializer: React.FC<AppInitializerProps> = ({ children }) => {
     };
 
     initialize();
-    
-    // No cleanup function needed as initPushNotifications returns
-    // the unsubscribe function, but we're not using it here since
-    // we want notifications to work throughout the app's lifecycle
   }, []);
 
   if (isInitializing) {
